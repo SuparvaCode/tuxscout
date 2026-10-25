@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Runtime & test outputs
+downloads/
+.tmp-test-verify/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local artifacts / screenshots / test outputs
+page.png
+shot.png
+research-report.md
+report.md
+wallpapers/
+music/
+videos/
+images/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db

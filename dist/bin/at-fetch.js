@@ -1,0 +1,7 @@
+#!/usr/bin/env node
+import { runCommand } from '../cli.js';
+runCommand('fetch', process.argv.slice(2)).catch((e) => {
+    console.error('Error:', e?.message || e);
+    process.exit(1);
+});
+//# sourceMappingURL=at-fetch.js.map

@@ -1,0 +1,92 @@
+{
+  "name": "tuxscout",
+  "version": "1.0.0",
+  "description": "TuxScout — Linux-Native AI Agent Reconnaissance, Media & Deep Research Suite: Multi-Engine Web Search, 5-Engine Image Search & Downloader, Fast Website-to-Markdown, Ultra-Low-RAM Puppeteer JS Fetcher, YouTube Video/Audio/Transcript Downloader, and 4-Stage Parallel Deep Research (CLI + HTTP API + MCP Server + SDK).",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "tuxscout": "./dist/cli.js",
+    "tx-search": "./dist/bin/at-search.js",
+    "tx-images": "./dist/bin/at-images.js",
+    "tx-fetch": "./dist/bin/at-fetch.js",
+    "tx-browser": "./dist/bin/at-browser.js",
+    "tx-yt": "./dist/bin/at-yt.js",
+    "tx-research": "./dist/bin/at-research.js",
+    "tx-serve": "./dist/bin/at-serve.js",
+    "tx-mcp": "./dist/bin/at-mcp.js",
+    "agent-tools": "./dist/cli.js",
+    "at-search": "./dist/bin/at-search.js",
+    "at-images": "./dist/bin/at-images.js",
+    "at-fetch": "./dist/bin/at-fetch.js",
+    "at-browser": "./dist/bin/at-browser.js",
+    "at-yt": "./dist/bin/at-yt.js",
+    "at-research": "./dist/bin/at-research.js",
+    "at-serve": "./dist/bin/at-serve.js",
+    "at-mcp": "./dist/bin/at-mcp.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepare": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/server.js",
+    "mcp": "node dist/mcp.js",
+    "cli": "node dist/cli.js",
+    "setup": "node dist/cli.js setup",
+    "doctor": "node dist/cli.js doctor",
+    "test": "node dist/test-all.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SuparvaCode/tuxscout.git"
+  },
+  "homepage": "https://github.com/SuparvaCode/tuxscout#readme",
+  "bugs": {
+    "url": "https://github.com/SuparvaCode/tuxscout/issues"
+  },
+  "files": [
+    "dist",
+    "src",
+    "install.sh",
+    "install.ps1",
+    "LICENSE",
+    "README.md"
+  ],
+  "keywords": [
+    "tuxscout",
+    "linux",
+    "ubuntu",
+    "windows",
+    "macos",
+    "ai-agents",
+    "web-search",
+    "image-search",
+    "image-downloader",
+    "youtube-downloader",
+    "youtube-transcript",
+    "yt-dlp",
+    "markdown-fetch",
+    "puppeteer",
+    "low-memory",
+    "deep-research",
+    "mcp"
+  ],
+  "author": "Suparva (https://github.com/SuparvaCode)",
+  "license": "MIT",
+  "dependencies": {
+    "puppeteer-core": "^24.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
