@@ -2,6 +2,7 @@
 
 **Cross-Platform AI Agent Reconnaissance, Media & Deep Research Suite (Linux • Windows • macOS)**
 
+[![npm version](https://img.shields.io/npm/v/tuxscout.svg?style=flat&color=cb3837)](https://www.npmjs.com/package/tuxscout)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Node.js >= 18](https://img.shields.io/badge/Node.js-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org/)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows%20%7C%20macOS-orange.svg)](#quick-installation)
@@ -17,10 +18,14 @@
 
 ## ⚡ Quick Installation
 
-### 1. One-Line Install via NPM (Linux, Windows, macOS)
+### 1. Official NPM Package (Global Install)
 ```bash
-npm install -g git+https://github.com/SuparvaCode/tuxscout.git
+npm install -g tuxscout
 tuxscout setup
+```
+Or run directly without installing:
+```bash
+npx tuxscout search "Gemini 4 release notes"
 ```
 
 ### 2. Windows PowerShell One-Liner (`irm`)
@@ -31,6 +36,12 @@ irm https://raw.githubusercontent.com/SuparvaCode/tuxscout/main/install.ps1 | ie
 ### 3. Linux (Ubuntu/Debian/Fedora/Arch) & macOS One-Liner (`curl`)
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SuparvaCode/tuxscout/main/install.sh | bash
+```
+
+### 4. Direct Git Install
+```bash
+npm install -g git+https://github.com/SuparvaCode/tuxscout.git
+tuxscout setup
 ```
 
 ### 4. Clone & Local Install

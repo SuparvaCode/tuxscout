@@ -93,9 +93,12 @@ if [ -f "${SCRIPT_DIR}/package.json" ]; then
   chmod +x dist/cli.js dist/bin/*.js
   npm install -g . 2>/dev/null || $SUDO npm install -g .
 else
-  REPO_URL="${TUXSCOUT_GIT_URL:-git+https://github.com/SuparvaCode/tuxscout.git}"
-  echo "[4/5] Installing TuxScout globally from ${REPO_URL}..."
-  npm install -g "${REPO_URL}" 2>/dev/null || $SUDO npm install -g "${REPO_URL}"
+  echo "[4/5] Installing TuxScout globally via npm registry (tuxscout)..."
+  if ! npm install -g tuxscout 2>/dev/null && ! $SUDO npm install -g tuxscout; then
+    REPO_URL="${TUXSCOUT_GIT_URL:-git+https://github.com/SuparvaCode/tuxscout.git}"
+    echo "      Fallback: Installing TuxScout globally from ${REPO_URL}..."
+    npm install -g "${REPO_URL}" 2>/dev/null || $SUDO npm install -g "${REPO_URL}"
+  fi
 fi
 
 # Optional systemd daemon setup on Linux

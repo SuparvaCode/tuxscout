@@ -60,9 +60,14 @@ if (Test-Path $pkgJson) {
         Pop-Location
     }
 } else {
-    $repoUrl = if ($env:TUXSCOUT_GIT_URL) { $env:TUXSCOUT_GIT_URL } else { "git+https://github.com/SuparvaCode/tuxscout.git" }
-    Write-Host "[4/5] Installing TuxScout globally from $repoUrl ..." -ForegroundColor Cyan
-    & npm install -g $repoUrl
+    Write-Host "[4/5] Installing TuxScout globally via npm registry (tuxscout)..." -ForegroundColor Cyan
+    try {
+        & npm install -g tuxscout
+    } catch {
+        $repoUrl = if ($env:TUXSCOUT_GIT_URL) { $env:TUXSCOUT_GIT_URL } else { "git+https://github.com/SuparvaCode/tuxscout.git" }
+        Write-Host "      Fallback: Installing from $repoUrl ..." -ForegroundColor Yellow
+        & npm install -g $repoUrl
+    }
 }
 
 # 5. Run setup verification
