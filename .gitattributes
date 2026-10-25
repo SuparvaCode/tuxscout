@@ -1,0 +1,5 @@
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.sh text eol=lf
+dist/**/*.js text eol=lf
+src/**/*.ts text eol=lf
