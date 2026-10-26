@@ -9,7 +9,8 @@
 [![MCP Ready](https://img.shields.io/badge/MCP-Stdio%20Server-purple.svg)](#mcp-model-context-protocol-server-tx-mcp)
 
 **TuxScout** is a high-performance, ultra-low-memory AI Agent Toolkit engineered for Linux servers, Docker containers, Windows workstations, and macOS environments. It provides:
-- **Global CLI Binaries** (`tuxscout`, `tx-search`, `tx-imdb`, `tx-pdf`, `tx-images`, `tx-social`, `tx-news`, `tx-extract`, `tx-fetch`, `tx-browser`, `tx-yt`, `tx-research`, `tx-serve`, `tx-mcp`)
+- **Global CLI Binaries** (`tuxscout`, `tx-search`, `tx-imdb`, `tx-pdf`, `tx-skill`, `tx-images`, `tx-social`, `tx-news`, `tx-extract`, `tx-fetch`, `tx-browser`, `tx-yt`, `tx-research`, `tx-serve`, `tx-mcp`)
+- **Built-in AI Agent Skill (`SKILL.md`)** for Claude Desktop, Antigravity, Cursor, Cline, Windsurf, OpenClaw, and custom LLM agents (`tx-skill` / `tuxscout skill`)
 - **Universal Proxy IP Support** (`HTTP`, `HTTPS`, `SOCKS5` / `SOCKS5h`, credentials, rotation pools, `--proxy` flag, `TUXSCOUT_PROXY` env var) across **all** tools
 - **Model Context Protocol (MCP) Server** (`tx-mcp` — zero-dependency JSON-RPC 2.0 over stdio)
 - **HTTP REST API Server** (`tx-serve` — drop-in compatible with Delphos web/image gateways)
@@ -143,6 +144,10 @@ tuxscout setup
 # System diagnostics & binary setup
 tuxscout setup
 tuxscout doctor
+
+# Print AI Agent Skill Guide & CLI Cheatsheet
+tuxscout skill
+tx-skill --json
 
 # Export JSON tool schemas for AI Agents / LLM Function Calling
 tuxscout schema

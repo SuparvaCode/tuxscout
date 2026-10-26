@@ -572,7 +572,7 @@ export function startMcpServer(): void {
           },
           serverInfo: {
             name: 'tuxscout',
-            version: '1.2.0',
+            version: '1.2.1',
           },
         });
         return;

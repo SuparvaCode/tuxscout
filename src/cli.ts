@@ -4,6 +4,7 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { setGlobalProxy, type ProxyInput } from './utils/http.js';
 import {
   searchImdb,
@@ -88,7 +89,7 @@ function parseCliArgs(argv: string[]): ParsedArgs {
 function printHelp(): void {
   console.log(`
 ╔════════════════════════════════════════════════════════════════════════════╗
-║                 TUXSCOUT v1.1.1 (Linux • Windows • macOS)                  ║
+║                 TUXSCOUT v1.2.0 (Linux • Windows • macOS)                  ║
 ║   Web Search • IMDb • PDF Search/Extract • Social Intel • Live News        ║
 ║     Markdown Fetch • Low-RAM Puppeteer JS • YouTube • Proxy Rotation       ║
 ╚════════════════════════════════════════════════════════════════════════════╝
@@ -98,8 +99,8 @@ USAGE:
 
 COMMANDS & SHORTHAND BINARIES:
   search   (tx-search)    Multi-engine Web Search + Advanced Filters (PDF, IMDb, Academic, Code, Site)
-  imdb                    IMDb Movie/TV/Actor Search & Rich Title Dossier Extractor
-  pdf                     PDF Document Search (Web + ArXiv + OpenAlex) & Direct PDF Text Extractor
+  imdb     (tx-imdb)      IMDb Movie/TV/Actor Search & Rich Title Dossier Extractor
+  pdf      (tx-pdf)       PDF Document Search (Web + ArXiv + OpenAlex) & Direct PDF Text Extractor
   images   (tx-images)    5-Engine Image Search & Parallel Verified Downloader
   social   (tx-social)    Zero-browser Social Scraper (Twitter/X, Instagram, Reddit, GitHub, TikTok)
   news     (tx-news)      Live News & Tech Intelligence (Google News, HackerNews, Reddit, Curated RSS)
@@ -108,6 +109,7 @@ COMMANDS & SHORTHAND BINARIES:
   browser  (tx-browser)   Ultra-low-RAM Headless Chromium / Puppeteer JS fetch
   yt       (tx-yt)        YouTube Video, Music/Audio, Search & Transcript tool
   research (tx-research)  4-Stage Parallel Multi-Angle Search & Deep Research
+  skill    (tx-skill)     Output the AI Agent SKILL.md guide and command specifications
   serve    (tx-serve)     Start the HTTP REST API server (Delphos compatible)
   mcp      (tx-mcp)       Start the Model Context Protocol (MCP) stdio server
   schema                  Output JSON tool schemas for AI Agents / LLM Function Calling
@@ -863,6 +865,50 @@ export async function runCommand(command: string, rawArgs: string[]): Promise<vo
 
     case 'mcp': {
       startMcpServer();
+      break;
+    }
+
+    case 'skill':
+    case 'skills': {
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = path.dirname(__filename);
+      const candidatePaths = [
+        path.join(__dirname, '../SKILL.md'),
+        path.join(__dirname, '../../SKILL.md'),
+        path.join(__dirname, '../skills/tuxscout/SKILL.md'),
+        path.join(process.cwd(), 'SKILL.md'),
+        path.join(process.cwd(), 'skills/tuxscout/SKILL.md'),
+      ];
+      let skillContent = '';
+      for (const p of candidatePaths) {
+        try {
+          skillContent = await fs.readFile(p, 'utf8');
+          if (skillContent) break;
+        } catch {
+          // try next
+        }
+      }
+      if (!skillContent) {
+        skillContent = `# TuxScout AI Agent Skill\nTuxScout is a cross-platform AI reconnaissance, web search, PDF & IMDb extraction, and media suite.`;
+      }
+
+      if (flags.json) {
+        console.log(
+          JSON.stringify(
+            {
+              name: 'tuxscout',
+              version: '1.2.1',
+              description:
+                'Cross-platform AI agent reconnaissance, web search, PDF/IMDb intelligence, social scraping, live news, and low-RAM media suite.',
+              skillMarkdown: skillContent,
+            },
+            null,
+            2,
+          ),
+        );
+      } else {
+        console.log(skillContent);
+      }
       break;
     }
 
