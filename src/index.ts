@@ -1,5 +1,5 @@
 // src/index.ts
-// Main SDK exports for Agent Tools Pack.
+// Main SDK exports for TuxScout.
 
 export * from './utils/http.js';
 export * from './utils/html.js';
@@ -9,5 +9,8 @@ export * from './tools/markdown-fetch.js';
 export * from './tools/puppeteer-fetch.js';
 export * from './tools/yt-downloader.js';
 export * from './tools/deep-research.js';
+export * from './tools/social-intel.js';
+export * from './tools/news-intel.js';
+export * from './tools/api-anything.js';
 export { startServer, type ServerOptions } from './server.js';
 export { startMcpServer } from './mcp.js';

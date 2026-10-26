@@ -17,7 +17,7 @@ export interface MarkdownFetchResult {
     domain: string;
     status: number;
     ok: boolean;
-    method: 'http' | 'puppeteer';
+    method: 'http' | 'puppeteer' | 'api';
     escalatedReason?: string;
     title: string;
     metadata: PageMetadata;

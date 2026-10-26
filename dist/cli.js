@@ -9,6 +9,9 @@ import { fetchMarkdown, fetchMarkdownBatch } from './tools/markdown-fetch.js';
 import { closePuppeteerPool, fetchWithPuppeteer, findBrowserExecutable, } from './tools/puppeteer-fetch.js';
 import { ensureYtDlp, extractVideoId, findFfmpegBinary, youtubeTool, } from './tools/yt-downloader.js';
 import { deepResearch } from './tools/deep-research.js';
+import { socialIntel } from './tools/social-intel.js';
+import { newsIntel } from './tools/news-intel.js';
+import { apiAnything } from './tools/api-anything.js';
 import { startServer } from './server.js';
 import { MCP_TOOLS, startMcpServer } from './mcp.js';
 function parseCliArgs(argv) {
@@ -61,9 +64,9 @@ function parseCliArgs(argv) {
 function printHelp() {
     console.log(`
 ╔════════════════════════════════════════════════════════════════════════════╗
-║                 TUXSCOUT v1.0.0 (Linux • Windows • macOS)                  ║
-║   Web Search • Image Search/DL • Markdown Fetch • Low-RAM Puppeteer JS     ║
-║         YouTube Video/Audio/Transcript • Multi-Stage Deep Research         ║
+║                 TUXSCOUT v1.1.0 (Linux • Windows • macOS)                  ║
+║   Web Search • Image Search/DL • Social Intel • Live News • API-Anything   ║
+║     Markdown Fetch • Low-RAM Puppeteer JS • YouTube • Deep Research        ║
 ╚════════════════════════════════════════════════════════════════════════════╝
 
 USAGE:
@@ -72,7 +75,10 @@ USAGE:
 COMMANDS & SHORTHAND BINARIES:
   search   (tx-search)    Multi-engine Web Search with 4-layer relevance filter
   images   (tx-images)    5-Engine Image Search & Parallel Verified Downloader
-  fetch    (tx-fetch)     Fast Website-to-Markdown fetch (auto-escalates to JS)
+  social   (tx-social)    Zero-browser Social Scraper (Twitter/X, Instagram, Reddit, GitHub, TikTok)
+  news     (tx-news)      Live News & Tech Intelligence (Google News, HackerNews, Reddit, Curated RSS)
+  api      (tx-api)       Universal "API-Anything" Structured Extractor (SO, ArXiv, Wiki, NPM, PyPI, Web)
+  fetch    (tx-fetch)     Fast Website-to-Markdown fetch (auto-intercepts Social/APIs & escalates to JS)
   browser  (tx-browser)   Ultra-low-RAM Headless Chromium / Puppeteer JS fetch
   yt       (tx-yt)        YouTube Video, Music/Audio, Search & Transcript tool
   research (tx-research)  4-Stage Parallel Multi-Angle Search & Deep Research
@@ -81,41 +87,47 @@ COMMANDS & SHORTHAND BINARIES:
   schema                  Output JSON tool schemas for AI Agents / LLM Function Calling
   setup                   Bootstrap yt-dlp binary & verify Chrome/ffmpeg on any OS
   doctor                  Verify binaries (Chromium, yt-dlp, ffmpeg) & live test
-  test                    Run the 14-step end-to-end verification suite
+  test                    Run the end-to-end verification suite
 
 EXAMPLES:
-  # 1. Web Search (single query or multiple parallel query angles)
-  tuxscout search "Gemini 4 release notes" -n 10 --json
-  tx-search --query "Linux kernel 6.12" --query "Linux 6.12 benchmarks"
+  # 1. Social Media Reconnaissance (Zero-Browser Structured JSON/Markdown)
+  tx-social "https://x.com/jack/status/20"                      # X/Twitter single tweet & thread stats
+  tx-social "@torvalds" --platform twitter -n 5                 # X/Twitter profile + recent tweets
+  tx-social "@nasa" --platform instagram -n 5                   # Instagram profile + recent posts/reels
+  tx-social "https://www.instagram.com/p/DWq-l0gDegd/"          # Instagram post/reel full caption & stats
+  tx-social "r/linux" --sort hot -n 10                          # Reddit subreddit feed
+  tx-social "gh:trending" --lang typescript                     # GitHub trending repositories
+  tx-social "torvalds/linux"                                    # GitHub repo overview, releases & README
 
-  # 2. Image Search & Parallel Download (auto-probes & filters dead/blocked links)
-  tuxscout images "futuristic server room" -n 10
+  # 2. Live News & Tech Intelligence Aggregator
+  tx-news --category ai -n 10                                   # Live AI news (Google News + HN + Tech RSS)
+  tx-news "Linux kernel 6.14" --when 7d -n 10                   # Topic news search within last 7 days
+  tx-news --category hn -n 15                                   # Hacker News frontpage
+  tx-news --hn-id 8863                                          # Full Hacker News story + comment tree
+
+  # 3. Universal "API-Anything" Structured Extractor
+  tx-api "https://stackoverflow.com/questions/11227809"         # StackOverflow question + top answers
+  tx-api "so:node fetch timeout"                                # StackOverflow search + accepted answers
+  tx-api "arxiv:1706.03762"                                     # ArXiv paper abstract, authors & PDF link
+  tx-api "npm:tuxscout"                                         # NPM package metadata & weekly downloads
+  tx-api "pypi:fastapi"                                         # PyPI package metadata & dependencies
+  tx-api "wiki:Linux_kernel"                                    # Wikipedia structured summary
+
+  # 4. Web Search & Verified Image Search/Download
+  tx-search "Gemini 4 release notes" -n 10 --json
   tx-images "mountain landscape wallpaper" --download --out ./wallpapers -n 5
 
-  # 3. Fast Website to Markdown Fetch
-  tuxscout fetch https://en.wikipedia.org/wiki/Linux --max-chars 5000
-  tx-fetch https://news.ycombinator.com --json
+  # 5. Fast Website-to-Markdown & Low-RAM Puppeteer JS Fetch
+  tx-fetch https://en.wikipedia.org/wiki/Linux --max-chars 5000
+  tx-browser https://example.com --scroll --screenshot ./page.png
 
-  # 4. Low-Memory Puppeteer JS Website Fetch
-  tuxscout browser https://example.com --scroll --screenshot ./page.png
-  tx-browser https://react.dev --wait networkidle2
-
-  # 5. YouTube Video / Music / Transcript / Search (filters Shorts vs Long videos)
+  # 6. YouTube Video / Music / Transcript / Search (filters Shorts vs Long videos)
   tx-yt "https://www.youtube.com/watch?v=jNQXAC9IVRw" --mode transcript
-  tx-yt "linux kernel tutorial" -n 5                     # Long-form videos only (default)
-  tx-yt "linux tips" --shorts -n 5                       # YouTube Shorts only (<=60s)
-  tx-yt "linux" --type all -n 5                          # Both Long-form and Shorts
-  tuxscout yt "https://www.youtube.com/watch?v=dQw4w9WgXcQ" --mode audio --format mp3 --out ./music
-  tx-yt "https://www.youtube.com/watch?v=dQw4w9WgXcQ" --mode video --height 1080 --out ./videos
+  tx-yt "linux kernel tutorial" -n 5                            # Long-form videos only (default)
+  tx-yt "linux tips" --shorts -n 5                              # YouTube Shorts only (<=60s)
 
-  # 6. Multi-Stage Parallel Deep Research
-  tuxscout research "Compare Bun vs Node.js v24 performance and memory usage" --depth standard --save ./report.md
-  tx-research "Latest breakthroughs in solid state batteries" --depth deep --images --yt
-
-  # 7. Start HTTP API Server, MCP Server, or Export LLM Tool Schemas
-  tuxscout serve --port 8787
-  tuxscout mcp
-  tuxscout schema
+  # 7. Multi-Stage Parallel Deep Research
+  tx-research "Compare Bun vs Node.js v24 performance" --depth standard --save ./report.md
 `);
 }
 export async function runCommand(command, rawArgs) {
@@ -460,6 +472,142 @@ export async function runCommand(command, rawArgs) {
             }
             break;
         }
+        case 'social':
+        case 'twitter':
+        case 'x':
+        case 'instagram':
+        case 'insta':
+        case 'reddit':
+        case 'github':
+        case 'tiktok': {
+            const target = typeof flags.target === 'string'
+                ? flags.target
+                : typeof flags.url === 'string'
+                    ? flags.url
+                    : typeof flags.query === 'string'
+                        ? flags.query
+                        : positional.join(' ');
+            if (!target) {
+                console.error('Error: Provide a target URL, @handle, r/subreddit, owner/repo, or query. Example: tx-social "@nasa" --platform instagram');
+                process.exit(1);
+            }
+            let platform = 'auto';
+            if (command === 'twitter' || command === 'x')
+                platform = 'twitter';
+            else if (command === 'instagram' || command === 'insta')
+                platform = 'instagram';
+            else if (command === 'reddit')
+                platform = 'reddit';
+            else if (command === 'github')
+                platform = 'github';
+            else if (command === 'tiktok')
+                platform = 'tiktok';
+            else if (typeof flags.platform === 'string') {
+                const p = flags.platform.toLowerCase();
+                if (p === 'x' || p === 'twitter')
+                    platform = 'twitter';
+                else if (p === 'ig' || p === 'insta' || p === 'instagram')
+                    platform = 'instagram';
+                else if (p === 'reddit')
+                    platform = 'reddit';
+                else if (p === 'gh' || p === 'github')
+                    platform = 'github';
+                else if (p === 'tiktok')
+                    platform = 'tiktok';
+            }
+            let action = 'auto';
+            if (flags.profile)
+                action = 'profile';
+            else if (flags.post || flags.tweet || flags.reel)
+                action = 'post';
+            else if (flags.search)
+                action = 'search';
+            else if (flags.trending)
+                action = 'trending';
+            else if (flags.feed)
+                action = 'feed';
+            else if (typeof flags.action === 'string')
+                action = flags.action;
+            const limit = Number(flags.n || flags.limit || flags.count || 8);
+            const sort = typeof flags.sort === 'string' ? flags.sort : undefined;
+            const language = typeof (flags.lang || flags.language) === 'string'
+                ? String(flags.lang || flags.language)
+                : undefined;
+            const res = await socialIntel({
+                target,
+                platform,
+                action,
+                limit,
+                sort: sort,
+                language,
+            });
+            if (typeof flags.save === 'string' || typeof flags.out === 'string') {
+                const outPath = path.resolve(String(flags.save || flags.out));
+                await fs.mkdir(path.dirname(outPath), { recursive: true });
+                await fs.writeFile(outPath, asJson ? JSON.stringify(res, null, 2) : res.markdown, 'utf8');
+            }
+            if (asJson) {
+                console.log(JSON.stringify(res, null, 2));
+            }
+            else {
+                console.log(res.markdown);
+            }
+            break;
+        }
+        case 'news':
+        case 'hn': {
+            const query = typeof flags.query === 'string'
+                ? flags.query
+                : positional.length > 0
+                    ? positional.join(' ')
+                    : undefined;
+            const category = (command === 'hn'
+                ? 'hn'
+                : typeof (flags.category || flags.cat) === 'string'
+                    ? String(flags.category || flags.cat)
+                    : 'tech');
+            const when = (typeof flags.when === 'string' ? flags.when : '24h');
+            const limit = Number(flags.n || flags.limit || flags.count || 15);
+            const hnItemId = typeof (flags['hn-id'] || flags.hnId || flags.id) === 'string'
+                ? String(flags['hn-id'] || flags.hnId || flags.id)
+                : undefined;
+            const res = await newsIntel({
+                query,
+                category,
+                when,
+                limit,
+                hnItemId,
+            });
+            if (asJson) {
+                console.log(JSON.stringify(res, null, 2));
+            }
+            else {
+                console.log(res.markdown);
+            }
+            break;
+        }
+        case 'api':
+        case 'extract': {
+            const target = typeof flags.target === 'string'
+                ? flags.target
+                : typeof flags.url === 'string'
+                    ? flags.url
+                    : positional.join(' ');
+            if (!target) {
+                console.error('Error: Provide a URL or shorthand target (e.g. tx-api "npm:tuxscout" or tx-api "https://x.com/jack/status/20").');
+                process.exit(1);
+            }
+            const limit = Number(flags.n || flags.limit || flags.count || 8);
+            const maxChars = Number(flags['max-chars'] || flags.maxChars || 6000);
+            const res = await apiAnything({ target, limit, maxChars });
+            if (asJson) {
+                console.log(JSON.stringify(res, null, 2));
+            }
+            else {
+                console.log(res.markdown);
+            }
+            break;
+        }
         case 'serve':
         case 'server': {
             const port = Number(flags.port || flags.p || process.env.PORT || 8787);
@@ -552,6 +700,12 @@ export async function runCommand(command, rawArgs) {
                 autoPuppeteer: false,
             });
             console.log(`   -> OK=${fetchRes.ok} | Status=${fetchRes.status} | Title="${fetchRes.title}" | Time=${fetchRes.ms}ms`);
+            console.log('8. Testing Zero-Browser Social Intel (X/Twitter)...');
+            const socialRes = await socialIntel({ target: 'https://x.com/jack/status/20' });
+            console.log(`   -> OK=${socialRes.ok} | Platform=${socialRes.platform} | Action=${socialRes.action} | Time=${socialRes.ms}ms`);
+            console.log('9. Testing Live News Aggregator (HN + Tech RSS)...');
+            const newsRes = await newsIntel({ category: 'hn', limit: 3 });
+            console.log(`   -> OK=${newsRes.ok} | Items=${newsRes.total} | Category=${newsRes.category} | Time=${newsRes.ms}ms`);
             await closePuppeteerPool();
             console.log('\nAll diagnostics complete!');
             break;

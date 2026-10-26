@@ -9,10 +9,10 @@
 [![MCP Ready](https://img.shields.io/badge/MCP-Stdio%20Server-purple.svg)](#mcp-model-context-protocol-server-tx-mcp)
 
 **TuxScout** is a high-performance, ultra-low-memory AI Agent Toolkit engineered for Linux servers, Docker containers, Windows workstations, and macOS environments. It provides:
-- **Global CLI Binaries** (`tuxscout`, `tx-search`, `tx-images`, `tx-fetch`, `tx-browser`, `tx-yt`, `tx-research`, `tx-serve`, `tx-mcp`)
+- **Global CLI Binaries** (`tuxscout`, `tx-search`, `tx-images`, `tx-social`, `tx-news`, `tx-api`, `tx-fetch`, `tx-browser`, `tx-yt`, `tx-research`, `tx-serve`, `tx-mcp`)
 - **Model Context Protocol (MCP) Server** (`tx-mcp` — zero-dependency JSON-RPC 2.0 over stdio)
 - **HTTP REST API Server** (`tx-serve` — drop-in compatible with Delphos web/image gateways)
-- **TypeScript / Node.js SDK** (`import { webSearch, imageSearch, fetchMarkdown, fetchWithPuppeteer, youtubeTool, deepResearch } from 'tuxscout'`)
+- **TypeScript / Node.js SDK** (`import { webSearch, imageSearch, socialIntel, newsIntel, apiAnything, fetchMarkdown, fetchWithPuppeteer, youtubeTool, deepResearch } from 'tuxscout'`)
 
 ---
 
@@ -95,6 +95,27 @@ tuxscout setup
 - **Stage 3 (Parallel Tiered Content Extraction):** Fetches candidate pages concurrently in Markdown, escalating JS-walled pages to Low-RAM Puppeteer and topping up failed pages from backup candidates.
 - **Stage 4 (Passage Ranking & Synthesis):** Scores paragraphs by query-term & factual density and compiles a citation-backed Markdown Research Report (`[1]`, `[2]`, ...).
 
+### 7. Zero-Browser Social Media Reconnaissance (`tx-social`)
+- Extracts concise, structured JSON + Markdown from social platforms in `<1s` **without opening a browser window**:
+  - **X / Twitter (`twitter`):** Single tweet/thread inspection (full text, quoted tweet, poll choices, direct `.mp4`/image media URLs, likes/retweets/replies/views), user profile + recent tweets hydrated newest-first by Snowflake ID, and topic tweet search.
+  - **Instagram (`instagram`):** User profile (followers, following, post count, bio, HD avatar) + parallel discovery & hydration of recent posts/reels, single post/reel inspection (full caption, exact likes & comments, publish date, direct CDN media URL), and topic search.
+  - **Reddit (`reddit`):** Subreddit feeds (`hot`, `new`, `top`), full post + nested comment tree extraction, and Reddit search via cookie-bootstrapped Atom feeds.
+  - **GitHub (`github`):** Repository overview + latest releases + raw README excerpt, Issue/PR discussion thread + comments, and GitHub Trending repositories (`daily`, `weekly`, `monthly`, filterable by language).
+  - **TikTok (`tiktok`):** Video caption, author metadata, and thumbnail via oEmbed + crawler metadata.
+
+### 8. Live News & Tech Intelligence Aggregator (`tx-news`)
+- Multi-source live news engine combining **Google News RSS** (`when: '1h' | '24h' | '7d' | '30d'`), **Hacker News Algolia API** (frontpage, search, and full nested story comment trees via `--hn-id`), **Reddit News** subreddits, and curated RSS feeds (**TechCrunch, ArsTechnica, The Verge, Lobsters, Phoronix, BleepingComputer, The Hacker News, MIT Tech Review AI, BBC World**) across 11 categories (`top`, `world`, `tech`, `ai`, `security`, `science`, `business`, `crypto`, `linux`, `opensource`, `hn`).
+
+### 9. Universal "API-Anything" Structured Router (`tx-api`)
+- Turns any URL or shorthand target into structured JSON + Markdown without launching a browser:
+  - **StackOverflow (`so:` or URL):** StackExchange API question body + top/accepted answers with code blocks.
+  - **ArXiv (`arxiv:` or URL):** ArXiv Atom API paper metadata, authors, categories, PDF link, and full abstract.
+  - **Wikipedia (`wiki:` or URL):** Wikimedia REST v1 structured summary + thumbnail.
+  - **NPM (`npm:` or URL) & PyPI (`pypi:` or URL):** Package version, description, weekly downloads, dependencies, CLI binaries, and repo links.
+  - **Social & Video URLs:** Automatically routes X/Twitter, Instagram, Reddit, GitHub, TikTok, HackerNews, and YouTube URLs to their native JSON/API extractors.
+  - **Generic Webpages:** Extracts embedded `application/ld+json` (Schema.org), Next.js `__NEXT_DATA__` hydration state, HTML `<table>` data as JSON objects, RSS feeds, OpenGraph metadata, and clean Markdown.
+  - **Automatic `tx-fetch` Interception:** Passing social or API URLs to `tx-fetch` automatically routes through `api-anything` (`method: 'api'`).
+
 ---
 
 ## 💻 CLI Usage & Examples
@@ -135,6 +156,29 @@ tx-yt "https://www.youtube.com/watch?v=jNQXAC9IVRw" --mode video --height 720 --
 # 6. 4-Stage Parallel Deep Research
 tx-research "Compare SQLite WAL mode vs DuckDB for embedded analytics" --depth quick
 tx-research "Latest breakthroughs in solid state batteries" --depth standard --images --yt --save ./report.md
+
+# 7. Zero-Browser Social Media Reconnaissance (X/Twitter, Instagram, Reddit, GitHub, TikTok)
+tx-social "https://x.com/jack/status/20"                      # X/Twitter single tweet & thread stats
+tx-social "@nasa" --platform twitter -n 5                     # X/Twitter profile + newest tweets
+tx-social "@nasa" --platform instagram -n 5                   # Instagram profile + recent posts/reels
+tx-social "https://www.instagram.com/p/DWq-l0gDegd/"          # Instagram post/reel full caption & stats
+tx-social "r/linux" --sort hot -n 10                          # Reddit subreddit feed
+tx-social "gh:trending" --lang typescript                     # GitHub trending repositories
+tx-social "torvalds/linux"                                    # GitHub repo overview, releases & README
+
+# 8. Live News & Tech Intelligence Aggregator
+tx-news --category ai -n 10                                   # Live AI news (Google News + HN + Tech RSS)
+tx-news "Linux kernel 6.14" --when 7d -n 10                   # Topic news search within last 7 days
+tx-news --category hn -n 15                                   # Hacker News frontpage
+tx-news --hn-id 8863                                          # Full Hacker News story + comment tree
+
+# 9. Universal "API-Anything" Structured Extractor
+tx-api "https://stackoverflow.com/questions/11227809"         # StackOverflow question + top answers
+tx-api "so:node fetch timeout"                                # StackOverflow search + accepted answers
+tx-api "arxiv:1706.03762"                                     # ArXiv paper abstract, authors & PDF link
+tx-api "npm:tuxscout"                                         # NPM package metadata & weekly downloads
+tx-api "pypi:fastapi"                                         # PyPI package metadata & dependencies
+tx-api "wiki:Linux_kernel"                                    # Wikipedia structured summary
 ```
 
 ---
@@ -163,6 +207,9 @@ TuxScout includes a built-in, zero-dependency MCP server over `stdio`. After ins
 | `fetch_puppeteer_js` | Ultra-low-RAM Headless Chromium JS renderer with request interception |
 | `youtube_tool` | YouTube Search (`long` / `shorts` / `all`), fast Transcripts, Info, Audio & Video downloader |
 | `deep_research` | 4-Stage Parallel Multi-Angle Search & Deep Research dossier generator |
+| `social_intel` | Zero-browser Social Media scraper for X/Twitter, Instagram, Reddit, GitHub & TikTok |
+| `news_intel` | Live News & Tech Intelligence aggregator (Google News, Hacker News, Reddit, Curated RSS) |
+| `api_anything` | Universal Zero-Browser Structured Extractor (StackOverflow, ArXiv, Wiki, NPM, PyPI, JSON-LD/Tables) |
 
 ---
 
@@ -186,6 +233,9 @@ AGENT_TOOLS_SECRET="your-secret-key" tx-serve --port 8787
 | `GET/POST` | `/puppeteer` | Low-RAM Headless Chromium JS fetch (`{ url, waitUntil?, scrollToBottom?, screenshotPath? }`) |
 | `GET/POST` | `/yt` | YouTube tool (`{ input, mode?: 'search'|'transcript'|'video'|'audio'|'info', videoType?: 'long'|'shorts'|'all' }`) |
 | `POST` | `/research` | 4-Stage Parallel Deep Research (`{ query, subQueries?, depth?: 'quick'|'standard'|'deep' }`) |
+| `GET/POST` | `/social` | Zero-browser Social Media scraper (`{ target, platform?, action?, limit?, sort?, language? }`) |
+| `GET/POST` | `/news` | Live News & Tech Intelligence (`{ query?, category?, when?, limit?, hnItemId? }`) |
+| `GET/POST` | `/api` | Universal API-Anything structured extractor (`{ target, limit?, maxChars? }`) |
 
 ---
 

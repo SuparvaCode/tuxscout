@@ -11,6 +11,9 @@ import { fetchMarkdown, fetchMarkdownBatch } from './tools/markdown-fetch.js';
 import { closePuppeteerPool, fetchWithPuppeteer, findBrowserExecutable, } from './tools/puppeteer-fetch.js';
 import { ensureYtDlp, extractVideoId, hasFfmpeg, youtubeTool, } from './tools/yt-downloader.js';
 import { deepResearch } from './tools/deep-research.js';
+import { socialIntel } from './tools/social-intel.js';
+import { newsIntel } from './tools/news-intel.js';
+import { apiAnything } from './tools/api-anything.js';
 import { MCP_TOOLS } from './mcp.js';
 const CORS_HEADERS = {
     'Access-Control-Allow-Origin': '*',
@@ -124,7 +127,7 @@ export async function startServer(options = {}) {
                 sendJson(res, 200, {
                     ok: true,
                     service: 'tuxscout',
-                    version: '1.0.0',
+                    version: '1.1.0',
                     platform: `${process.platform}-${process.arch}`,
                     uptimeSec: Math.round(process.uptime()),
                     memoryMb: {
@@ -145,6 +148,9 @@ export async function startServer(options = {}) {
                         'GET/POST /puppeteer',
                         'GET/POST /yt',
                         'POST     /research',
+                        'GET/POST /social (Zero-browser Twitter/X, Instagram, Reddit, GitHub, TikTok)',
+                        'GET/POST /news (Live Google News, Hacker News, Reddit News, Curated Tech/AI/World RSS)',
+                        'GET/POST /api (Universal API-Anything structured extractor)',
                     ],
                 });
                 return;
@@ -347,6 +353,51 @@ export async function startServer(options = {}) {
                     includeYoutube: Boolean(params.includeYoutube),
                 });
                 sendJson(res, 200, result);
+                return;
+            }
+            // ── 9. Social Media Reconnaissance (Twitter/X, Instagram, Reddit, GitHub, TikTok) ──
+            if (pathname === '/social' || pathname === '/apis/v1/social') {
+                const target = clean(params.target ?? params.url ?? params.query ?? params.q);
+                if (!target) {
+                    sendJson(res, 400, { error: 'Missing "target" parameter (URL, @handle, r/subreddit, owner/repo, or query).' });
+                    return;
+                }
+                const result = await socialIntel({
+                    target,
+                    platform: params.platform || 'auto',
+                    action: params.action || 'auto',
+                    limit: (params.limit ?? params.n) ? Number(params.limit ?? params.n) : undefined,
+                    sort: params.sort,
+                    language: params.language ?? params.lang,
+                });
+                sendJson(res, result.ok ? 200 : 502, result);
+                return;
+            }
+            // ── 10. Live News & Tech Intelligence Aggregator ──────────────────────
+            if (pathname === '/news' || pathname === '/apis/v1/news') {
+                const result = await newsIntel({
+                    query: clean(params.query ?? params.q ?? params.topic) || undefined,
+                    category: params.category,
+                    when: params.when,
+                    limit: (params.limit ?? params.n) ? Number(params.limit ?? params.n) : undefined,
+                    hnItemId: params.hnItemId ?? params.hn_item_id,
+                });
+                sendJson(res, result.ok ? 200 : 502, result);
+                return;
+            }
+            // ── 11. Universal "API-Anything" Structured Router ────────────────────
+            if (pathname === '/api' || pathname === '/extract' || pathname === '/apis/v1/extract') {
+                const target = clean(params.target ?? params.url ?? params.query ?? params.q);
+                if (!target) {
+                    sendJson(res, 400, { error: 'Missing "target" parameter.' });
+                    return;
+                }
+                const result = await apiAnything({
+                    target,
+                    limit: (params.limit ?? params.n) ? Number(params.limit ?? params.n) : undefined,
+                    maxChars: params.maxChars ? Number(params.maxChars) : undefined,
+                });
+                sendJson(res, result.ok ? 200 : 502, result);
                 return;
             }
             sendJson(res, 404, { error: `Unknown endpoint: ${pathname}` });

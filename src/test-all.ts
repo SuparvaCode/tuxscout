@@ -11,6 +11,9 @@ import { fetchMarkdown, fetchMarkdownBatch } from './tools/markdown-fetch.js';
 import { closePuppeteerPool, fetchWithPuppeteer } from './tools/puppeteer-fetch.js';
 import { youtubeTool } from './tools/yt-downloader.js';
 import { deepResearch } from './tools/deep-research.js';
+import { socialIntel } from './tools/social-intel.js';
+import { newsIntel } from './tools/news-intel.js';
+import { apiAnything } from './tools/api-anything.js';
 import { startServer } from './server.js';
 
 interface TestResult {
@@ -264,6 +267,30 @@ async function main() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const toolsList = (responses[1] as any)?.result?.tools || [];
       return `rpcResponses=3, registeredTools=${toolsList.length}`;
+    });
+
+    // 15. Social Intelligence (Zero-Browser X/Twitter & Instagram)
+    await runStep('15. Social Intelligence (X/Twitter & Instagram Zero-Browser Scraper)', async () => {
+      const [tw, ig] = await Promise.all([
+        socialIntel({ target: 'https://x.com/jack/status/20' }),
+        socialIntel({ target: 'https://www.instagram.com/p/DWq-l0gDegd/' }),
+      ]);
+      if (!tw.ok || !ig.ok) {
+        throw new Error(`Social scrape failed: tw=${tw.ok}, ig=${ig.ok}`);
+      }
+      return `twitter=${tw.platform}/${tw.action} (${tw.markdown.length} chars), instagram=${ig.platform}/${ig.action} (${ig.markdown.length} chars)`;
+    });
+
+    // 16. Live News Aggregator & Universal API-Anything Router
+    await runStep('16. Live News Aggregator & Universal API-Anything Router', async () => {
+      const [news, pkg] = await Promise.all([
+        newsIntel({ category: 'hn', limit: 3 }),
+        apiAnything({ target: 'npm:tuxscout' }),
+      ]);
+      if (!news.ok || !pkg.ok) {
+        throw new Error(`News/API failed: news=${news.ok}, api=${pkg.ok}`);
+      }
+      return `hnStories=${news.total}, apiProvider=${pkg.provider} (${pkg.target})`;
     });
   } finally {
     await closePuppeteerPool();

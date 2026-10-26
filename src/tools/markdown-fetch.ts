@@ -19,6 +19,7 @@ import {
   textOnly,
 } from '../utils/html.js';
 import { fetchWithPuppeteer } from './puppeteer-fetch.js';
+import { apiAnything, detectApiProvider } from './api-anything.js';
 
 export interface MarkdownFetchOptions {
   url: string;
@@ -39,7 +40,7 @@ export interface MarkdownFetchResult {
   domain: string;
   status: number;
   ok: boolean;
-  method: 'http' | 'puppeteer';
+  method: 'http' | 'puppeteer' | 'api';
   escalatedReason?: string;
   title: string;
   metadata: PageMetadata;
@@ -85,6 +86,61 @@ export async function fetchMarkdown(
   if (!options.noCache) {
     const hit = pageCache.get(cacheKey);
     if (hit) return { ...hit, cached: true };
+  }
+
+  // Zero-browser API-Anything interception for social media & structured platforms
+  if (!options.forcePuppeteer) {
+    const provider = detectApiProvider(targetUrl);
+    if (
+      provider === 'twitter' ||
+      provider === 'instagram' ||
+      provider === 'reddit' ||
+      provider === 'stackoverflow' ||
+      provider === 'arxiv' ||
+      provider === 'tiktok'
+    ) {
+      try {
+        const apiRes = await apiAnything({
+          target: targetUrl,
+          maxChars: maxChars || 8000,
+          noCache: options.noCache,
+        });
+        if (apiRes.ok && apiRes.markdown) {
+          const md = maxChars > 0 ? apiRes.markdown.slice(0, maxChars) : apiRes.markdown;
+          const firstHeading = /^#\s+(.+)$/m.exec(md)?.[1] || targetUrl;
+          const body: Omit<MarkdownFetchResult, 'cached'> = {
+            url: targetUrl,
+            finalUrl: targetUrl,
+            domain: hostOf(targetUrl),
+            status: 200,
+            ok: true,
+            method: 'api',
+            title: firstHeading,
+            metadata: {
+              title: firstHeading,
+              description: `Structured ${provider} extraction via TuxScout API-Anything`,
+              author: '',
+              publishedTime: '',
+              siteName: provider,
+              canonicalUrl: targetUrl,
+              language: 'en',
+            },
+            markdown: md,
+            textContent: md,
+            wordCount: countWords(md),
+            charCount: md.length,
+            links: [],
+            images: [],
+            needsJs: false,
+            ms: Date.now() - started,
+          };
+          pageCache.set(cacheKey, body);
+          return { ...body, cached: false };
+        }
+      } catch {
+        /* fallback to standard HTTP/Puppeteer */
+      }
+    }
   }
 
   // If forcePuppeteer is requested, go straight to low-memory headless Chromium

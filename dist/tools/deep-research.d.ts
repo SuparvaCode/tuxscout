@@ -31,7 +31,7 @@ export interface RankedEvidencePage {
     domain: string;
     publishedTime?: string;
     author?: string;
-    fetchMethod: 'http' | 'puppeteer';
+    fetchMethod: 'http' | 'puppeteer' | 'api';
     escalatedReason?: string;
     relevanceScore: number;
     wordCount: number;

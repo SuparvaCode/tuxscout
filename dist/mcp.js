@@ -15,6 +15,9 @@ import { fetchMarkdown } from './tools/markdown-fetch.js';
 import { fetchWithPuppeteer } from './tools/puppeteer-fetch.js';
 import { youtubeTool, extractVideoId } from './tools/yt-downloader.js';
 import { deepResearch } from './tools/deep-research.js';
+import { socialIntel } from './tools/social-intel.js';
+import { newsIntel } from './tools/news-intel.js';
+import { apiAnything } from './tools/api-anything.js';
 export const MCP_TOOLS = [
     {
         name: 'web_search',
@@ -186,6 +189,95 @@ export const MCP_TOOLS = [
             required: ['query'],
         },
     },
+    {
+        name: 'social_intel',
+        description: 'Zero-browser Social Media Reconnaissance & Structured Scraper. Extracts concise structured JSON & Markdown for X/Twitter (tweet/thread, user profile + recent tweets, topic search), Instagram (user profile + recent posts/reels grid, post/reel caption & stats, topic search), Reddit (subreddit feed, post + comment tree, search), GitHub (repo overview + README, issue/PR thread, trending repos), and TikTok.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                target: {
+                    type: 'string',
+                    description: 'URL, @handle, r/subreddit, owner/repo, or search query (e.g. "https://x.com/jack/status/20", "@nasa", "https://www.instagram.com/p/DWq-l0gDegd/", "r/linux", "gh:trending").',
+                },
+                platform: {
+                    type: 'string',
+                    enum: ['auto', 'twitter', 'instagram', 'reddit', 'github', 'tiktok'],
+                    description: 'Social platform (auto-detected from target URL/prefix if omitted).',
+                },
+                action: {
+                    type: 'string',
+                    enum: ['auto', 'profile', 'post', 'search', 'feed', 'trending', 'repo', 'issue'],
+                    description: 'Action to perform (auto-detected if omitted).',
+                },
+                limit: {
+                    type: 'number',
+                    description: 'Max posts/tweets/comments/repos to return (default 8).',
+                },
+                sort: {
+                    type: 'string',
+                    description: 'Sort order for Reddit ("hot", "new", "top") or GitHub trending ("daily", "weekly", "monthly").',
+                },
+                language: {
+                    type: 'string',
+                    description: 'Optional programming language filter when action="trending" on GitHub.',
+                },
+            },
+            required: ['target'],
+        },
+    },
+    {
+        name: 'news_intel',
+        description: 'Multi-source Live News & Tech Intelligence Aggregator. Combines Google News RSS, Hacker News Algolia API (frontpage, search, and full story comment trees), Reddit News, and curated Tech/AI/Security/Linux/World feeds (TechCrunch, ArsTechnica, The Verge, Lobsters, Phoronix, BBC World) with deduplication.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                query: {
+                    type: 'string',
+                    description: 'Optional custom news topic/query OR HackerNews item URL/ID.',
+                },
+                category: {
+                    type: 'string',
+                    enum: ['top', 'world', 'tech', 'ai', 'security', 'science', 'business', 'crypto', 'linux', 'opensource', 'hn'],
+                    description: 'News category when query is omitted (default "tech").',
+                },
+                when: {
+                    type: 'string',
+                    enum: ['1h', '24h', '7d', '30d', 'any'],
+                    description: 'Recency window for search queries (default "24h").',
+                },
+                limit: {
+                    type: 'number',
+                    description: 'Max news stories or HN comments to return (default 15).',
+                },
+                hnItemId: {
+                    type: 'string',
+                    description: 'Optional Hacker News story ID to fetch its full nested comment discussion.',
+                },
+            },
+        },
+    },
+    {
+        name: 'api_anything',
+        description: 'Universal Zero-Browser "API-Anything" Router & Structured Webpage Extractor. Turns ANY URL or shorthand target (Twitter/X, Instagram, Reddit, GitHub, YouTube, HackerNews, StackOverflow, ArXiv, Wikipedia, NPM, PyPI, TikTok, or any generic webpage with JSON-LD/NextData/Tables) into concise structured JSON + Markdown without opening a browser window.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                target: {
+                    type: 'string',
+                    description: 'Any URL or prefixed query (e.g. "https://x.com/...", "ig:nasa", "npm:tuxscout", "pypi:fastapi", "arxiv:2401.00001", "so:node fetch timeout", "wiki:Linux", or any website URL).',
+                },
+                limit: {
+                    type: 'number',
+                    description: 'Max items/answers/papers/comments to extract (default 8).',
+                },
+                maxChars: {
+                    type: 'number',
+                    description: 'Max Markdown characters for generic webpages (default 6000).',
+                },
+            },
+            required: ['target'],
+        },
+    },
 ];
 function sendRpcResponse(id, result) {
     const msg = JSON.stringify({ jsonrpc: '2.0', id, result });
@@ -268,6 +360,29 @@ async function handleToolCall(name, args) {
                 includeImages: args.includeImages ?? args.include_images,
                 includeYoutube: args.includeYoutube ?? args.include_youtube,
             });
+        case 'social_intel':
+            return await socialIntel({
+                target: String(args.target ?? args.url ?? args.query ?? args.q ?? ''),
+                platform: args.platform || 'auto',
+                action: args.action || 'auto',
+                limit: args.limit ?? args.n ?? args.count,
+                sort: args.sort,
+                language: args.language ?? args.lang,
+            });
+        case 'news_intel':
+            return await newsIntel({
+                query: args.query ?? args.q ?? args.topic,
+                category: args.category,
+                when: args.when,
+                limit: args.limit ?? args.n ?? args.count,
+                hnItemId: args.hnItemId ?? args.hn_item_id,
+            });
+        case 'api_anything':
+            return await apiAnything({
+                target: String(args.target ?? args.url ?? args.query ?? args.q ?? ''),
+                limit: args.limit ?? args.n ?? args.count,
+                maxChars: args.maxChars ?? args.max_chars,
+            });
         default:
             throw new Error(`Unknown tool: ${name}`);
     }
@@ -300,7 +415,7 @@ export function startMcpServer() {
                     },
                     serverInfo: {
                         name: 'tuxscout',
-                        version: '1.0.0',
+                        version: '1.1.0',
                     },
                 });
                 return;
