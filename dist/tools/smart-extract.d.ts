@@ -1,5 +1,5 @@
-export type ApiAnythingProvider = 'twitter' | 'instagram' | 'reddit' | 'github' | 'tiktok' | 'hackernews' | 'youtube' | 'stackoverflow' | 'arxiv' | 'wikipedia' | 'npm' | 'pypi' | 'webpage';
-export interface ApiAnythingOptions {
+export type SmartExtractProvider = 'twitter' | 'instagram' | 'reddit' | 'github' | 'tiktok' | 'hackernews' | 'youtube' | 'stackoverflow' | 'arxiv' | 'wikipedia' | 'npm' | 'pypi' | 'webpage';
+export interface SmartExtractOptions {
     /** URL or prefixed target (e.g. "https://x.com/...", "ig:nasa", "npm:tuxscout", "arxiv:2401.00001", "so:node fetch timeout") */
     target: string;
     /** Max items/comments/chars depending on provider */
@@ -9,9 +9,9 @@ export interface ApiAnythingOptions {
     /** Bypass cache */
     noCache?: boolean;
 }
-export interface ApiAnythingResult {
+export interface SmartExtractResult {
     ok: boolean;
-    provider: ApiAnythingProvider;
+    provider: SmartExtractProvider;
     target: string;
     structured: unknown;
     markdown: string;
@@ -87,6 +87,6 @@ export declare function extractStructuredWebpage(url: string, maxChars?: number)
     }[];
     markdown: string;
 }>;
-export declare function detectApiProvider(target: string): ApiAnythingProvider;
-export declare function apiAnything(options: ApiAnythingOptions): Promise<ApiAnythingResult>;
-//# sourceMappingURL=api-anything.d.ts.map
+export declare function detectExtractProvider(target: string): SmartExtractProvider;
+export declare function smartExtract(options: SmartExtractOptions): Promise<SmartExtractResult>;
+//# sourceMappingURL=smart-extract.d.ts.map

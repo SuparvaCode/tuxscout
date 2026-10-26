@@ -13,7 +13,7 @@ import { ensureYtDlp, extractVideoId, hasFfmpeg, youtubeTool, } from './tools/yt
 import { deepResearch } from './tools/deep-research.js';
 import { socialIntel } from './tools/social-intel.js';
 import { newsIntel } from './tools/news-intel.js';
-import { apiAnything } from './tools/api-anything.js';
+import { smartExtract } from './tools/smart-extract.js';
 import { MCP_TOOLS } from './mcp.js';
 const CORS_HEADERS = {
     'Access-Control-Allow-Origin': '*',
@@ -127,7 +127,7 @@ export async function startServer(options = {}) {
                 sendJson(res, 200, {
                     ok: true,
                     service: 'tuxscout',
-                    version: '1.1.0',
+                    version: '1.1.1',
                     platform: `${process.platform}-${process.arch}`,
                     uptimeSec: Math.round(process.uptime()),
                     memoryMb: {
@@ -150,7 +150,7 @@ export async function startServer(options = {}) {
                         'POST     /research',
                         'GET/POST /social (Zero-browser Twitter/X, Instagram, Reddit, GitHub, TikTok)',
                         'GET/POST /news (Live Google News, Hacker News, Reddit News, Curated Tech/AI/World RSS)',
-                        'GET/POST /api (Universal API-Anything structured extractor)',
+                        'GET/POST /extract (Zero-browser Smart Extract for StackOverflow, ArXiv, Wiki, NPM, PyPI, Web)',
                     ],
                 });
                 return;
@@ -385,14 +385,14 @@ export async function startServer(options = {}) {
                 sendJson(res, result.ok ? 200 : 502, result);
                 return;
             }
-            // ── 11. Universal "API-Anything" Structured Router ────────────────────
-            if (pathname === '/api' || pathname === '/extract' || pathname === '/apis/v1/extract') {
+            // ── 11. Zero-Browser Smart Extract Router ─────────────────────────────
+            if (pathname === '/extract' || pathname === '/apis/v1/extract') {
                 const target = clean(params.target ?? params.url ?? params.query ?? params.q);
                 if (!target) {
                     sendJson(res, 400, { error: 'Missing "target" parameter.' });
                     return;
                 }
-                const result = await apiAnything({
+                const result = await smartExtract({
                     target,
                     limit: (params.limit ?? params.n) ? Number(params.limit ?? params.n) : undefined,
                     maxChars: params.maxChars ? Number(params.maxChars) : undefined,

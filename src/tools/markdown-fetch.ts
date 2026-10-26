@@ -19,7 +19,7 @@ import {
   textOnly,
 } from '../utils/html.js';
 import { fetchWithPuppeteer } from './puppeteer-fetch.js';
-import { apiAnything, detectApiProvider } from './api-anything.js';
+import { smartExtract, detectExtractProvider } from './smart-extract.js';
 
 export interface MarkdownFetchOptions {
   url: string;
@@ -88,9 +88,9 @@ export async function fetchMarkdown(
     if (hit) return { ...hit, cached: true };
   }
 
-  // Zero-browser API-Anything interception for social media & structured platforms
+  // Zero-browser Smart Extract interception for social media & structured platforms
   if (!options.forcePuppeteer) {
-    const provider = detectApiProvider(targetUrl);
+    const provider = detectExtractProvider(targetUrl);
     if (
       provider === 'twitter' ||
       provider === 'instagram' ||
@@ -100,7 +100,7 @@ export async function fetchMarkdown(
       provider === 'tiktok'
     ) {
       try {
-        const apiRes = await apiAnything({
+        const apiRes = await smartExtract({
           target: targetUrl,
           maxChars: maxChars || 8000,
           noCache: options.noCache,
@@ -118,7 +118,7 @@ export async function fetchMarkdown(
             title: firstHeading,
             metadata: {
               title: firstHeading,
-              description: `Structured ${provider} extraction via TuxScout API-Anything`,
+              description: `Structured ${provider} extraction via TuxScout Smart Extract`,
               author: '',
               publishedTime: '',
               siteName: provider,

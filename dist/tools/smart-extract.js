@@ -1,6 +1,6 @@
-// src/tools/api-anything.ts
-// "API-Anything" — Universal Zero-Browser Structured Data Router & Extractor for AI Agents.
-// Turns ANY URL or target (X/Twitter, Instagram, Reddit, GitHub, YouTube, HackerNews,
+// src/tools/smart-extract.ts
+// TuxScout Smart Extract — Zero-Browser Structured Data Router & Knowledge Extractor for AI Agents.
+// Turns any URL or target (X/Twitter, Instagram, Reddit, GitHub, YouTube, HackerNews,
 // StackOverflow, ArXiv, Wikipedia, NPM, PyPI, TikTok, or any generic webpage) into
 // concise, token-efficient structured JSON + Markdown without opening a browser window.
 import { BROWSER_HEADERS, clean, fetchTextWithJar, LruCache } from '../utils/http.js';
@@ -60,7 +60,7 @@ export async function fetchStackOverflow(target, limit = 3) {
         .map((q) => q.accepted_answer_id)
         .filter(Boolean);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let answersById = new Map();
+    const answersById = new Map();
     if (answerIds.length) {
         const aRes = await fetch(`${apiBase}/answers/${answerIds.join(';')}?site=stackoverflow&filter=withbody`, { signal: AbortSignal.timeout(7_000) });
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -255,7 +255,7 @@ function extractHtmlTablesAsJson(html) {
 }
 export async function extractStructuredWebpage(url, maxChars = 6000) {
     const deadline = Date.now() + 10_000;
-    const res = await fetchTextWithJar('api_web', url, deadline, BROWSER_HEADERS);
+    const res = await fetchTextWithJar('smart_web', url, deadline, BROWSER_HEADERS);
     const html = res.text;
     const meta = extractPageMetadata(html, res.url);
     // 1. Extract all JSON-LD blocks
@@ -334,8 +334,8 @@ export async function extractStructuredWebpage(url, maxChars = 6000) {
         markdown: md.markdown,
     };
 }
-// ── UNIFIED API-ANYTHING ROUTER ────────────────────────────────────────────
-export function detectApiProvider(target) {
+// ── UNIFIED SMART EXTRACT ROUTER ───────────────────────────────────────────
+export function detectExtractProvider(target) {
     const t = target.trim();
     if (/(?:twitter\.com|x\.com)\//i.test(t) || /^(?:twitter|x):/i.test(t))
         return 'twitter';
@@ -363,13 +363,13 @@ export function detectApiProvider(target) {
         return 'pypi';
     return 'webpage';
 }
-export async function apiAnything(options) {
+export async function smartExtract(options) {
     const started = Date.now();
     const target = clean(options.target);
     const limit = Number(options.limit || 8);
     const maxChars = Number(options.maxChars || 6000);
-    const provider = detectApiProvider(target);
-    const cacheKey = `api:${provider}:${target}:${limit}:${maxChars}`;
+    const provider = detectExtractProvider(target);
+    const cacheKey = `extract:${provider}:${target}:${limit}:${maxChars}`;
     if (!options.noCache) {
         const hit = cache.get(cacheKey);
         if (hit)
@@ -548,4 +548,4 @@ export async function apiAnything(options) {
         };
     }
 }
-//# sourceMappingURL=api-anything.js.map
+//# sourceMappingURL=smart-extract.js.map

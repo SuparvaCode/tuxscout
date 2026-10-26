@@ -1,7 +1,7 @@
 {
   "name": "tuxscout",
-  "version": "1.1.0",
-  "description": "TuxScout — Linux-Native AI Agent Reconnaissance, Social Intelligence, Live News, API-Anything Structured Extractor, Media & Deep Research Suite: Multi-Engine Web Search, 5-Engine Image Search & Downloader, Zero-Browser Social Scraper (Twitter/X, Instagram, Reddit, GitHub, TikTok), Live News Aggregator, Universal API-Anything Extractor, Fast Website-to-Markdown, Ultra-Low-RAM Puppeteer JS Fetcher, YouTube Video/Audio/Transcript Downloader, and 4-Stage Parallel Deep Research.",
+  "version": "1.1.1",
+  "description": "TuxScout — Linux-Native AI Agent Reconnaissance, Social Intelligence, Live News, Smart Knowledge Extractor, Media & Deep Research Suite: Multi-Engine Web Search, 5-Engine Image Search & Downloader, Zero-Browser Social Scraper (Twitter/X, Instagram, Reddit, GitHub, TikTok), Live News Aggregator, Zero-Browser Smart Extract, Fast Website-to-Markdown, Ultra-Low-RAM Puppeteer JS Fetcher, YouTube Video/Audio/Transcript Downloader, and 4-Stage Parallel Deep Research.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -21,7 +21,7 @@
     "tx-research": "dist/bin/at-research.js",
     "tx-social": "dist/bin/at-social.js",
     "tx-news": "dist/bin/at-news.js",
-    "tx-api": "dist/bin/at-api.js",
+    "tx-extract": "dist/bin/at-extract.js",
     "tx-serve": "dist/bin/at-serve.js",
     "tx-mcp": "dist/bin/at-mcp.js",
     "agent-tools": "dist/cli.js",
@@ -33,7 +33,7 @@
     "at-research": "dist/bin/at-research.js",
     "at-social": "dist/bin/at-social.js",
     "at-news": "dist/bin/at-news.js",
-    "at-api": "dist/bin/at-api.js",
+    "at-extract": "dist/bin/at-extract.js",
     "at-serve": "dist/bin/at-serve.js",
     "at-mcp": "dist/bin/at-mcp.js"
   },

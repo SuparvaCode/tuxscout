@@ -1,6 +1,6 @@
-// src/tools/api-anything.ts
-// "API-Anything" — Universal Zero-Browser Structured Data Router & Extractor for AI Agents.
-// Turns ANY URL or target (X/Twitter, Instagram, Reddit, GitHub, YouTube, HackerNews,
+// src/tools/smart-extract.ts
+// TuxScout Smart Extract — Zero-Browser Structured Data Router & Knowledge Extractor for AI Agents.
+// Turns any URL or target (X/Twitter, Instagram, Reddit, GitHub, YouTube, HackerNews,
 // StackOverflow, ArXiv, Wikipedia, NPM, PyPI, TikTok, or any generic webpage) into
 // concise, token-efficient structured JSON + Markdown without opening a browser window.
 
@@ -17,7 +17,7 @@ import { socialIntel } from './social-intel.js';
 import { newsIntel } from './news-intel.js';
 import { extractVideoId, youtubeTool } from './yt-downloader.js';
 
-export type ApiAnythingProvider =
+export type SmartExtractProvider =
   | 'twitter'
   | 'instagram'
   | 'reddit'
@@ -32,7 +32,7 @@ export type ApiAnythingProvider =
   | 'pypi'
   | 'webpage';
 
-export interface ApiAnythingOptions {
+export interface SmartExtractOptions {
   /** URL or prefixed target (e.g. "https://x.com/...", "ig:nasa", "npm:tuxscout", "arxiv:2401.00001", "so:node fetch timeout") */
   target: string;
   /** Max items/comments/chars depending on provider */
@@ -43,9 +43,9 @@ export interface ApiAnythingOptions {
   noCache?: boolean;
 }
 
-export interface ApiAnythingResult {
+export interface SmartExtractResult {
   ok: boolean;
-  provider: ApiAnythingProvider;
+  provider: SmartExtractProvider;
   target: string;
   structured: unknown;
   markdown: string;
@@ -54,7 +54,7 @@ export interface ApiAnythingResult {
   error?: string;
 }
 
-const cache = new LruCache<Omit<ApiAnythingResult, 'cached'>>(250, 10 * 60_000);
+const cache = new LruCache<Omit<SmartExtractResult, 'cached'>>(250, 10 * 60_000);
 
 // ── 1. STACKOVERFLOW / STACKEXCHANGE EXTRACTOR ─────────────────────────────
 
@@ -118,7 +118,7 @@ export async function fetchStackOverflow(target: string, limit = 3) {
     .filter(Boolean);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let answersById = new Map<number, any>();
+  const answersById = new Map<number, any>();
   if (answerIds.length) {
     const aRes = await fetch(
       `${apiBase}/answers/${answerIds.join(';')}?site=stackoverflow&filter=withbody`,
@@ -222,7 +222,7 @@ export async function fetchWikipediaSummary(target: string) {
     extract: d.extract || '',
     url: d.content_urls?.desktop?.page || `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(title)}`,
     thumbnailUrl: d.thumbnail?.source,
-     coordinates: d.coordinates,
+    coordinates: d.coordinates,
     lastModified: d.timestamp,
   };
 }
@@ -257,7 +257,7 @@ export async function fetchNpmPackage(target: string) {
     repository: typeof d.repository === 'object' ? d.repository?.url : d.repository,
     weeklyDownloads: dl?.downloads ?? null,
     dependencies: Object.keys(d.dependencies || {}),
-     peerDependencies: Object.keys(d.peerDependencies || {}),
+    peerDependencies: Object.keys(d.peerDependencies || {}),
     bin: d.bin ? Object.keys(d.bin) : [],
     keywords: d.keywords || [],
     npmUrl: `https://www.npmjs.com/package/${d.name}`,
@@ -327,7 +327,7 @@ function extractHtmlTablesAsJson(html: string): Array<Array<Record<string, strin
 
 export async function extractStructuredWebpage(url: string, maxChars = 6000) {
   const deadline = Date.now() + 10_000;
-  const res = await fetchTextWithJar('api_web', url, deadline, BROWSER_HEADERS);
+  const res = await fetchTextWithJar('smart_web', url, deadline, BROWSER_HEADERS);
   const html = res.text;
   const meta = extractPageMetadata(html, res.url);
 
@@ -410,9 +410,9 @@ export async function extractStructuredWebpage(url: string, maxChars = 6000) {
   };
 }
 
-// ── UNIFIED API-ANYTHING ROUTER ────────────────────────────────────────────
+// ── UNIFIED SMART EXTRACT ROUTER ───────────────────────────────────────────
 
-export function detectApiProvider(target: string): ApiAnythingProvider {
+export function detectExtractProvider(target: string): SmartExtractProvider {
   const t = target.trim();
   if (/(?:twitter\.com|x\.com)\//i.test(t) || /^(?:twitter|x):/i.test(t)) return 'twitter';
   if (/instagram\.com\//i.test(t) || /^(?:ig|insta|instagram):/i.test(t)) return 'instagram';
@@ -429,14 +429,14 @@ export function detectApiProvider(target: string): ApiAnythingProvider {
   return 'webpage';
 }
 
-export async function apiAnything(options: ApiAnythingOptions): Promise<ApiAnythingResult> {
+export async function smartExtract(options: SmartExtractOptions): Promise<SmartExtractResult> {
   const started = Date.now();
   const target = clean(options.target);
   const limit = Number(options.limit || 8);
   const maxChars = Number(options.maxChars || 6000);
-  const provider = detectApiProvider(target);
+  const provider = detectExtractProvider(target);
 
-  const cacheKey = `api:${provider}:${target}:${limit}:${maxChars}`;
+  const cacheKey = `extract:${provider}:${target}:${limit}:${maxChars}`;
   if (!options.noCache) {
     const hit = cache.get(cacheKey);
     if (hit) return { ...hit, cached: true, ms: Date.now() - started };
@@ -618,7 +618,7 @@ export async function apiAnything(options: ApiAnythingOptions): Promise<ApiAnyth
       markdown = lines.join('\n');
     }
 
-    const result: Omit<ApiAnythingResult, 'cached'> = {
+    const result: Omit<SmartExtractResult, 'cached'> = {
       ok: true,
       provider,
       target,

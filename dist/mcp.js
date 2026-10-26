@@ -17,7 +17,7 @@ import { youtubeTool, extractVideoId } from './tools/yt-downloader.js';
 import { deepResearch } from './tools/deep-research.js';
 import { socialIntel } from './tools/social-intel.js';
 import { newsIntel } from './tools/news-intel.js';
-import { apiAnything } from './tools/api-anything.js';
+import { smartExtract } from './tools/smart-extract.js';
 export const MCP_TOOLS = [
     {
         name: 'web_search',
@@ -257,8 +257,8 @@ export const MCP_TOOLS = [
         },
     },
     {
-        name: 'api_anything',
-        description: 'Universal Zero-Browser "API-Anything" Router & Structured Webpage Extractor. Turns ANY URL or shorthand target (Twitter/X, Instagram, Reddit, GitHub, YouTube, HackerNews, StackOverflow, ArXiv, Wikipedia, NPM, PyPI, TikTok, or any generic webpage with JSON-LD/NextData/Tables) into concise structured JSON + Markdown without opening a browser window.',
+        name: 'smart_extract',
+        description: 'Zero-Browser Structured Knowledge Extractor & Router. Turns any URL or shorthand target (Twitter/X, Instagram, Reddit, GitHub, YouTube, HackerNews, StackOverflow, ArXiv, Wikipedia, NPM, PyPI, TikTok, or any generic webpage with JSON-LD/NextData/Tables) into concise structured JSON + Markdown without opening a browser window.',
         inputSchema: {
             type: 'object',
             properties: {
@@ -377,8 +377,8 @@ async function handleToolCall(name, args) {
                 limit: args.limit ?? args.n ?? args.count,
                 hnItemId: args.hnItemId ?? args.hn_item_id,
             });
-        case 'api_anything':
-            return await apiAnything({
+        case 'smart_extract':
+            return await smartExtract({
                 target: String(args.target ?? args.url ?? args.query ?? args.q ?? ''),
                 limit: args.limit ?? args.n ?? args.count,
                 maxChars: args.maxChars ?? args.max_chars,
@@ -415,7 +415,7 @@ export function startMcpServer() {
                     },
                     serverInfo: {
                         name: 'tuxscout',
-                        version: '1.1.0',
+                        version: '1.1.1',
                     },
                 });
                 return;

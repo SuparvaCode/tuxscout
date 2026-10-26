@@ -26,7 +26,7 @@ import {
 import { deepResearch, type ResearchDepth } from './tools/deep-research.js';
 import { socialIntel, type SocialAction, type SocialPlatform } from './tools/social-intel.js';
 import { newsIntel, type NewsCategory, type NewsRecency } from './tools/news-intel.js';
-import { apiAnything } from './tools/api-anything.js';
+import { smartExtract } from './tools/smart-extract.js';
 import { startServer } from './server.js';
 import { MCP_TOOLS, startMcpServer } from './mcp.js';
 
@@ -81,8 +81,8 @@ function parseCliArgs(argv: string[]): ParsedArgs {
 function printHelp(): void {
   console.log(`
 ╔════════════════════════════════════════════════════════════════════════════╗
-║                 TUXSCOUT v1.1.0 (Linux • Windows • macOS)                  ║
-║   Web Search • Image Search/DL • Social Intel • Live News • API-Anything   ║
+║                 TUXSCOUT v1.1.1 (Linux • Windows • macOS)                  ║
+║   Web Search • Image Search/DL • Social Intel • Live News • Smart Extract  ║
 ║     Markdown Fetch • Low-RAM Puppeteer JS • YouTube • Deep Research        ║
 ╚════════════════════════════════════════════════════════════════════════════╝
 
@@ -94,7 +94,7 @@ COMMANDS & SHORTHAND BINARIES:
   images   (tx-images)    5-Engine Image Search & Parallel Verified Downloader
   social   (tx-social)    Zero-browser Social Scraper (Twitter/X, Instagram, Reddit, GitHub, TikTok)
   news     (tx-news)      Live News & Tech Intelligence (Google News, HackerNews, Reddit, Curated RSS)
-  api      (tx-api)       Universal "API-Anything" Structured Extractor (SO, ArXiv, Wiki, NPM, PyPI, Web)
+  extract  (tx-extract)   Zero-browser Smart Knowledge Extractor (SO, ArXiv, Wiki, NPM, PyPI, Web)
   fetch    (tx-fetch)     Fast Website-to-Markdown fetch (auto-intercepts Social/APIs & escalates to JS)
   browser  (tx-browser)   Ultra-low-RAM Headless Chromium / Puppeteer JS fetch
   yt       (tx-yt)        YouTube Video, Music/Audio, Search & Transcript tool
@@ -122,13 +122,13 @@ EXAMPLES:
   tx-news --category hn -n 15                                   # Hacker News frontpage
   tx-news --hn-id 8863                                          # Full Hacker News story + comment tree
 
-  # 3. Universal "API-Anything" Structured Extractor
-  tx-api "https://stackoverflow.com/questions/11227809"         # StackOverflow question + top answers
-  tx-api "so:node fetch timeout"                                # StackOverflow search + accepted answers
-  tx-api "arxiv:1706.03762"                                     # ArXiv paper abstract, authors & PDF link
-  tx-api "npm:tuxscout"                                         # NPM package metadata & weekly downloads
-  tx-api "pypi:fastapi"                                         # PyPI package metadata & dependencies
-  tx-api "wiki:Linux_kernel"                                    # Wikipedia structured summary
+  # 3. Zero-Browser Smart Knowledge Extractor
+  tx-extract "https://stackoverflow.com/questions/11227809"     # StackOverflow question + top answers
+  tx-extract "so:node fetch timeout"                            # StackOverflow search + accepted answers
+  tx-extract "arxiv:1706.03762"                                 # ArXiv paper abstract, authors & PDF link
+  tx-extract "npm:tuxscout"                                     # NPM package metadata & weekly downloads
+  tx-extract "pypi:fastapi"                                     # PyPI package metadata & dependencies
+  tx-extract "wiki:Linux_kernel"                                # Wikipedia structured summary
 
   # 4. Web Search & Verified Image Search/Download
   tx-search "Gemini 4 release notes" -n 10 --json
@@ -628,8 +628,8 @@ export async function runCommand(command: string, rawArgs: string[]): Promise<vo
       break;
     }
 
-    case 'api':
-    case 'extract': {
+    case 'extract':
+    case 'inspect': {
       const target =
         typeof flags.target === 'string'
           ? flags.target
@@ -638,13 +638,13 @@ export async function runCommand(command: string, rawArgs: string[]): Promise<vo
             : positional.join(' ');
       if (!target) {
         console.error(
-          'Error: Provide a URL or shorthand target (e.g. tx-api "npm:tuxscout" or tx-api "https://x.com/jack/status/20").',
+          'Error: Provide a URL or shorthand target (e.g. tx-extract "npm:tuxscout" or tx-extract "https://x.com/jack/status/20").',
         );
         process.exit(1);
       }
       const limit = Number(flags.n || flags.limit || flags.count || 8);
       const maxChars = Number(flags['max-chars'] || flags.maxChars || 6000);
-      const res = await apiAnything({ target, limit, maxChars });
+      const res = await smartExtract({ target, limit, maxChars });
       if (asJson) {
         console.log(JSON.stringify(res, null, 2));
       } else {

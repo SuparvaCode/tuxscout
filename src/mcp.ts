@@ -18,7 +18,7 @@ import { youtubeTool, type YtMode, type YtVideoType, extractVideoId } from './to
 import { deepResearch, type ResearchDepth } from './tools/deep-research.js';
 import { socialIntel, type SocialPlatform, type SocialAction } from './tools/social-intel.js';
 import { newsIntel, type NewsCategory, type NewsRecency } from './tools/news-intel.js';
-import { apiAnything } from './tools/api-anything.js';
+import { smartExtract } from './tools/smart-extract.js';
 
 export const MCP_TOOLS = [
   {
@@ -271,9 +271,9 @@ export const MCP_TOOLS = [
     },
   },
   {
-    name: 'api_anything',
+    name: 'smart_extract',
     description:
-      'Universal Zero-Browser "API-Anything" Router & Structured Webpage Extractor. Turns ANY URL or shorthand target (Twitter/X, Instagram, Reddit, GitHub, YouTube, HackerNews, StackOverflow, ArXiv, Wikipedia, NPM, PyPI, TikTok, or any generic webpage with JSON-LD/NextData/Tables) into concise structured JSON + Markdown without opening a browser window.',
+      'Zero-Browser Structured Knowledge Extractor & Router. Turns any URL or shorthand target (Twitter/X, Instagram, Reddit, GitHub, YouTube, HackerNews, StackOverflow, ArXiv, Wikipedia, NPM, PyPI, TikTok, or any generic webpage with JSON-LD/NextData/Tables) into concise structured JSON + Markdown without opening a browser window.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -406,8 +406,8 @@ async function handleToolCall(name: string, args: Record<string, any>): Promise<
         hnItemId: args.hnItemId ?? args.hn_item_id,
       });
 
-    case 'api_anything':
-      return await apiAnything({
+    case 'smart_extract':
+      return await smartExtract({
         target: String(args.target ?? args.url ?? args.query ?? args.q ?? ''),
         limit: args.limit ?? args.n ?? args.count,
         maxChars: args.maxChars ?? args.max_chars,
@@ -447,7 +447,7 @@ export function startMcpServer(): void {
           },
           serverInfo: {
             name: 'tuxscout',
-            version: '1.1.0',
+            version: '1.1.1',
           },
         });
         return;

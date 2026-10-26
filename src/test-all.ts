@@ -13,7 +13,7 @@ import { youtubeTool } from './tools/yt-downloader.js';
 import { deepResearch } from './tools/deep-research.js';
 import { socialIntel } from './tools/social-intel.js';
 import { newsIntel } from './tools/news-intel.js';
-import { apiAnything } from './tools/api-anything.js';
+import { smartExtract } from './tools/smart-extract.js';
 import { startServer } from './server.js';
 
 interface TestResult {
@@ -281,16 +281,16 @@ async function main() {
       return `twitter=${tw.platform}/${tw.action} (${tw.markdown.length} chars), instagram=${ig.platform}/${ig.action} (${ig.markdown.length} chars)`;
     });
 
-    // 16. Live News Aggregator & Universal API-Anything Router
-    await runStep('16. Live News Aggregator & Universal API-Anything Router', async () => {
+    // 16. Live News Aggregator & Smart Knowledge Extractor
+    await runStep('16. Live News Aggregator & Smart Knowledge Extractor', async () => {
       const [news, pkg] = await Promise.all([
         newsIntel({ category: 'hn', limit: 3 }),
-        apiAnything({ target: 'npm:tuxscout' }),
+        smartExtract({ target: 'npm:tuxscout' }),
       ]);
       if (!news.ok || !pkg.ok) {
-        throw new Error(`News/API failed: news=${news.ok}, api=${pkg.ok}`);
+        throw new Error(`News/Extract failed: news=${news.ok}, extract=${pkg.ok}`);
       }
-      return `hnStories=${news.total}, apiProvider=${pkg.provider} (${pkg.target})`;
+      return `hnStories=${news.total}, extractProvider=${pkg.provider} (${pkg.target})`;
     });
   } finally {
     await closePuppeteerPool();

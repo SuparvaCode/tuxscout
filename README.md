@@ -9,10 +9,10 @@
 [![MCP Ready](https://img.shields.io/badge/MCP-Stdio%20Server-purple.svg)](#mcp-model-context-protocol-server-tx-mcp)
 
 **TuxScout** is a high-performance, ultra-low-memory AI Agent Toolkit engineered for Linux servers, Docker containers, Windows workstations, and macOS environments. It provides:
-- **Global CLI Binaries** (`tuxscout`, `tx-search`, `tx-images`, `tx-social`, `tx-news`, `tx-api`, `tx-fetch`, `tx-browser`, `tx-yt`, `tx-research`, `tx-serve`, `tx-mcp`)
+- **Global CLI Binaries** (`tuxscout`, `tx-search`, `tx-images`, `tx-social`, `tx-news`, `tx-extract`, `tx-fetch`, `tx-browser`, `tx-yt`, `tx-research`, `tx-serve`, `tx-mcp`)
 - **Model Context Protocol (MCP) Server** (`tx-mcp` — zero-dependency JSON-RPC 2.0 over stdio)
 - **HTTP REST API Server** (`tx-serve` — drop-in compatible with Delphos web/image gateways)
-- **TypeScript / Node.js SDK** (`import { webSearch, imageSearch, socialIntel, newsIntel, apiAnything, fetchMarkdown, fetchWithPuppeteer, youtubeTool, deepResearch } from 'tuxscout'`)
+- **TypeScript / Node.js SDK** (`import { webSearch, imageSearch, socialIntel, newsIntel, smartExtract, fetchMarkdown, fetchWithPuppeteer, youtubeTool, deepResearch } from 'tuxscout'`)
 
 ---
 
@@ -106,7 +106,7 @@ tuxscout setup
 ### 8. Live News & Tech Intelligence Aggregator (`tx-news`)
 - Multi-source live news engine combining **Google News RSS** (`when: '1h' | '24h' | '7d' | '30d'`), **Hacker News Algolia API** (frontpage, search, and full nested story comment trees via `--hn-id`), **Reddit News** subreddits, and curated RSS feeds (**TechCrunch, ArsTechnica, The Verge, Lobsters, Phoronix, BleepingComputer, The Hacker News, MIT Tech Review AI, BBC World**) across 11 categories (`top`, `world`, `tech`, `ai`, `security`, `science`, `business`, `crypto`, `linux`, `opensource`, `hn`).
 
-### 9. Universal "API-Anything" Structured Router (`tx-api`)
+### 9. Zero-Browser Smart Knowledge Extractor (`tx-extract`)
 - Turns any URL or shorthand target into structured JSON + Markdown without launching a browser:
   - **StackOverflow (`so:` or URL):** StackExchange API question body + top/accepted answers with code blocks.
   - **ArXiv (`arxiv:` or URL):** ArXiv Atom API paper metadata, authors, categories, PDF link, and full abstract.
@@ -114,7 +114,7 @@ tuxscout setup
   - **NPM (`npm:` or URL) & PyPI (`pypi:` or URL):** Package version, description, weekly downloads, dependencies, CLI binaries, and repo links.
   - **Social & Video URLs:** Automatically routes X/Twitter, Instagram, Reddit, GitHub, TikTok, HackerNews, and YouTube URLs to their native JSON/API extractors.
   - **Generic Webpages:** Extracts embedded `application/ld+json` (Schema.org), Next.js `__NEXT_DATA__` hydration state, HTML `<table>` data as JSON objects, RSS feeds, OpenGraph metadata, and clean Markdown.
-  - **Automatic `tx-fetch` Interception:** Passing social or API URLs to `tx-fetch` automatically routes through `api-anything` (`method: 'api'`).
+  - **Automatic `tx-fetch` Interception:** Passing social or knowledge URLs to `tx-fetch` automatically routes through `smartExtract` (`method: 'api'`).
 
 ---
 
@@ -172,13 +172,13 @@ tx-news "Linux kernel 6.14" --when 7d -n 10                   # Topic news searc
 tx-news --category hn -n 15                                   # Hacker News frontpage
 tx-news --hn-id 8863                                          # Full Hacker News story + comment tree
 
-# 9. Universal "API-Anything" Structured Extractor
-tx-api "https://stackoverflow.com/questions/11227809"         # StackOverflow question + top answers
-tx-api "so:node fetch timeout"                                # StackOverflow search + accepted answers
-tx-api "arxiv:1706.03762"                                     # ArXiv paper abstract, authors & PDF link
-tx-api "npm:tuxscout"                                         # NPM package metadata & weekly downloads
-tx-api "pypi:fastapi"                                         # PyPI package metadata & dependencies
-tx-api "wiki:Linux_kernel"                                    # Wikipedia structured summary
+# 9. Zero-Browser Smart Knowledge Extractor
+tx-extract "https://stackoverflow.com/questions/11227809"     # StackOverflow question + top answers
+tx-extract "so:node fetch timeout"                            # StackOverflow search + accepted answers
+tx-extract "arxiv:1706.03762"                                 # ArXiv paper abstract, authors & PDF link
+tx-extract "npm:tuxscout"                                     # NPM package metadata & weekly downloads
+tx-extract "pypi:fastapi"                                     # PyPI package metadata & dependencies
+tx-extract "wiki:Linux_kernel"                                # Wikipedia structured summary
 ```
 
 ---
@@ -209,7 +209,7 @@ TuxScout includes a built-in, zero-dependency MCP server over `stdio`. After ins
 | `deep_research` | 4-Stage Parallel Multi-Angle Search & Deep Research dossier generator |
 | `social_intel` | Zero-browser Social Media scraper for X/Twitter, Instagram, Reddit, GitHub & TikTok |
 | `news_intel` | Live News & Tech Intelligence aggregator (Google News, Hacker News, Reddit, Curated RSS) |
-| `api_anything` | Universal Zero-Browser Structured Extractor (StackOverflow, ArXiv, Wiki, NPM, PyPI, JSON-LD/Tables) |
+| `smart_extract` | Zero-Browser Smart Knowledge Extractor (StackOverflow, ArXiv, Wiki, NPM, PyPI, JSON-LD/Tables) |
 
 ---
 
@@ -235,7 +235,7 @@ AGENT_TOOLS_SECRET="your-secret-key" tx-serve --port 8787
 | `POST` | `/research` | 4-Stage Parallel Deep Research (`{ query, subQueries?, depth?: 'quick'|'standard'|'deep' }`) |
 | `GET/POST` | `/social` | Zero-browser Social Media scraper (`{ target, platform?, action?, limit?, sort?, language? }`) |
 | `GET/POST` | `/news` | Live News & Tech Intelligence (`{ query?, category?, when?, limit?, hnItemId? }`) |
-| `GET/POST` | `/api` | Universal API-Anything structured extractor (`{ target, limit?, maxChars? }`) |
+| `GET/POST` | `/extract` | Zero-browser Smart Knowledge Extractor (`{ target, limit?, maxChars? }`) |
 
 ---
 

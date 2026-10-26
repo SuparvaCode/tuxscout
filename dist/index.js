@@ -10,7 +10,7 @@ export * from './tools/yt-downloader.js';
 export * from './tools/deep-research.js';
 export * from './tools/social-intel.js';
 export * from './tools/news-intel.js';
-export * from './tools/api-anything.js';
+export * from './tools/smart-extract.js';
 export { startServer } from './server.js';
 export { startMcpServer } from './mcp.js';
 //# sourceMappingURL=index.js.map
