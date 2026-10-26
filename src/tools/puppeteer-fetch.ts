@@ -11,7 +11,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import puppeteer, { type Browser, type HTTPRequest, type Page } from 'puppeteer-core';
-import { clean, DEFAULT_UA } from '../utils/http.js';
+import { clean, DEFAULT_UA, resolveProxy, type ProxyInput } from '../utils/http.js';
 import {
   extractPageMetadata,
   htmlToMarkdown,
@@ -39,6 +39,8 @@ export interface PuppeteerFetchOptions {
   extraHeaders?: Record<string, string>;
   cookies?: Array<{ name: string; value: string; domain?: string; path?: string }>;
   closeBrowserAfter?: boolean;
+  /** Optional HTTP/HTTPS/SOCKS5 proxy URL or proxy list for rotation */
+  proxy?: ProxyInput;
 }
 
 export interface PuppeteerFetchResult {
@@ -176,6 +178,7 @@ const MAX_CONCURRENT_PAGES = 3;
 
 let sharedBrowser: Browser | null = null;
 let browserLaunchPromise: Promise<Browser> | null = null;
+let currentBrowserProxyArg = '';
 let activePages = 0;
 let totalPagesServed = 0;
 let idleTimer: NodeJS.Timeout | null = null;
@@ -192,6 +195,7 @@ function scheduleIdleClose(): void {
       if (activePages === 0 && sharedBrowser) {
         const b = sharedBrowser;
         sharedBrowser = null;
+        currentBrowserProxyArg = '';
         await b.close().catch(() => {});
       }
     }, IDLE_TIMEOUT_MS);
@@ -220,16 +224,18 @@ function releaseSlot(): void {
   }
 }
 
-async function getBrowser(): Promise<Browser> {
+async function getBrowser(proxyServerArg = ''): Promise<Browser> {
   if (idleTimer) {
     clearTimeout(idleTimer);
     idleTimer = null;
   }
 
   if (sharedBrowser && sharedBrowser.connected) {
-    if (totalPagesServed >= MAX_PAGES_BEFORE_RECYCLE && activePages <= 1) {
+    const proxyChanged = currentBrowserProxyArg !== proxyServerArg;
+    if ((totalPagesServed >= MAX_PAGES_BEFORE_RECYCLE || proxyChanged) && activePages <= 1) {
       const old = sharedBrowser;
       sharedBrowser = null;
+      currentBrowserProxyArg = '';
       totalPagesServed = 0;
       await old.close().catch(() => {});
     } else {
@@ -244,10 +250,13 @@ async function getBrowser(): Promise<Browser> {
   browserLaunchPromise = (async () => {
     try {
       executableUsed = findBrowserExecutable();
+      const launchArgs = proxyServerArg
+        ? [...LOW_MEMORY_CHROMIUM_ARGS, `--proxy-server=${proxyServerArg}`]
+        : LOW_MEMORY_CHROMIUM_ARGS;
       const browser = await puppeteer.launch({
         executablePath: executableUsed,
         headless: true,
-        args: LOW_MEMORY_CHROMIUM_ARGS,
+        args: launchArgs,
         defaultViewport: { width: 1280, height: 800 },
         handleSIGINT: false,
         handleSIGTERM: false,
@@ -256,9 +265,11 @@ async function getBrowser(): Promise<Browser> {
       browser.on('disconnected', () => {
         if (sharedBrowser === browser) {
           sharedBrowser = null;
+          currentBrowserProxyArg = '';
         }
       });
       sharedBrowser = browser;
+      currentBrowserProxyArg = proxyServerArg;
       totalPagesServed = 0;
       return browser;
     } finally {
@@ -370,13 +381,21 @@ export async function fetchWithPuppeteer(
   await acquireSlot();
   let page: Page | null = null;
   const counters = { blocked: 0, allowed: 0 };
+  const resolvedProxy = resolveProxy(options.proxy);
 
   try {
-    const browser = await getBrowser();
+    const browser = await getBrowser(resolvedProxy?.serverArg || '');
     totalPagesServed++;
     page = await browser.newPage();
     page.setDefaultNavigationTimeout(timeoutMs);
     page.setDefaultTimeout(timeoutMs);
+
+    if (resolvedProxy?.username) {
+      await page.authenticate({
+        username: resolvedProxy.username,
+        password: resolvedProxy.password || '',
+      });
+    }
 
     await applyStealthAndLowMemToPage(
       page,

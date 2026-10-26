@@ -1,3 +1,4 @@
+import { type ProxyInput } from '../utils/http.js';
 export type NewsCategory = 'top' | 'world' | 'tech' | 'ai' | 'security' | 'science' | 'business' | 'crypto' | 'linux' | 'opensource' | 'hn';
 export type NewsTimeframe = '1h' | '24h' | '7d' | '30d' | 'any';
 export type NewsRecency = NewsTimeframe;
@@ -25,6 +26,8 @@ export interface NewsIntelOptions {
     hnItemId?: string | number;
     /** Bypass cache */
     noCache?: boolean;
+    /** Optional HTTP/HTTPS/SOCKS5 proxy URL or proxy list for rotation */
+    proxy?: ProxyInput;
 }
 export interface NewsIntelResult {
     ok: boolean;
@@ -53,9 +56,9 @@ export interface NewsIntelResult {
     cached: boolean;
     ms: number;
 }
-export declare function fetchGoogleNewsSearch(query: string, when?: NewsTimeframe, limit?: number): Promise<NewsItem[]>;
-export declare function fetchHackerNews(query?: string, limit?: number): Promise<NewsItem[]>;
-export declare function fetchHackerNewsItem(itemId: string | number, maxComments?: number): Promise<{
+export declare function fetchGoogleNewsSearch(query: string, when?: NewsTimeframe, limit?: number, proxy?: ProxyInput): Promise<NewsItem[]>;
+export declare function fetchHackerNews(query?: string, limit?: number, proxy?: ProxyInput): Promise<NewsItem[]>;
+export declare function fetchHackerNewsItem(itemId: string | number, maxComments?: number, proxy?: ProxyInput): Promise<{
     id: number;
     title: string;
     url: any;

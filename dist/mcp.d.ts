@@ -23,6 +23,56 @@ export declare const MCP_TOOLS: ({
                 type: string;
                 description: string;
             };
+            searchType: {
+                type: string;
+                enum: string[];
+                description: string;
+            };
+            site: {
+                type: string;
+                description: string;
+            };
+            excludeSite: {
+                type: string;
+                description: string;
+            };
+            filetype: {
+                type: string;
+                description: string;
+            };
+            pdfOnly: {
+                type: string;
+                description: string;
+            };
+            intitle: {
+                type: string;
+                description: string;
+            };
+            inurl: {
+                type: string;
+                description: string;
+            };
+            exactPhrase: {
+                type: string;
+                description: string;
+            };
+            excludeTerms: {
+                type: string;
+                description: string;
+            };
+            timeRange: {
+                type: string;
+                enum: string[];
+                description: string;
+            };
+            region: {
+                type: string;
+                description: string;
+            };
+            proxy: {
+                type: string;
+                description: string;
+            };
             safe?: undefined;
             verifyUrls?: undefined;
             images?: undefined;
@@ -50,6 +100,7 @@ export declare const MCP_TOOLS: ({
             depth?: undefined;
             maxPages?: undefined;
             includeYoutube?: undefined;
+            includePdf?: undefined;
             target?: undefined;
             platform?: undefined;
             action?: undefined;
@@ -59,6 +110,7 @@ export declare const MCP_TOOLS: ({
             category?: undefined;
             when?: undefined;
             hnItemId?: undefined;
+            provider?: undefined;
         };
         required?: undefined;
     };
@@ -89,7 +141,22 @@ export declare const MCP_TOOLS: ({
                 type: string;
                 description: string;
             };
+            proxy: {
+                type: string;
+                description: string;
+            };
             queries?: undefined;
+            searchType?: undefined;
+            site?: undefined;
+            excludeSite?: undefined;
+            filetype?: undefined;
+            pdfOnly?: undefined;
+            intitle?: undefined;
+            inurl?: undefined;
+            exactPhrase?: undefined;
+            excludeTerms?: undefined;
+            timeRange?: undefined;
+            region?: undefined;
             images?: undefined;
             outputDir?: undefined;
             count?: undefined;
@@ -115,6 +182,7 @@ export declare const MCP_TOOLS: ({
             depth?: undefined;
             maxPages?: undefined;
             includeYoutube?: undefined;
+            includePdf?: undefined;
             target?: undefined;
             platform?: undefined;
             action?: undefined;
@@ -124,6 +192,7 @@ export declare const MCP_TOOLS: ({
             category?: undefined;
             when?: undefined;
             hnItemId?: undefined;
+            provider?: undefined;
         };
         required: string[];
     };
@@ -157,9 +226,24 @@ export declare const MCP_TOOLS: ({
                 enum: string[];
                 description?: undefined;
             };
+            proxy: {
+                type: string;
+                description: string;
+            };
             queries?: undefined;
             n?: undefined;
             engine?: undefined;
+            searchType?: undefined;
+            site?: undefined;
+            excludeSite?: undefined;
+            filetype?: undefined;
+            pdfOnly?: undefined;
+            intitle?: undefined;
+            inurl?: undefined;
+            exactPhrase?: undefined;
+            excludeTerms?: undefined;
+            timeRange?: undefined;
+            region?: undefined;
             verifyUrls?: undefined;
             url?: undefined;
             maxChars?: undefined;
@@ -183,6 +267,7 @@ export declare const MCP_TOOLS: ({
             depth?: undefined;
             maxPages?: undefined;
             includeYoutube?: undefined;
+            includePdf?: undefined;
             target?: undefined;
             platform?: undefined;
             action?: undefined;
@@ -192,6 +277,7 @@ export declare const MCP_TOOLS: ({
             category?: undefined;
             when?: undefined;
             hnItemId?: undefined;
+            provider?: undefined;
         };
         required: string[];
     };
@@ -225,10 +311,25 @@ export declare const MCP_TOOLS: ({
                 type: string;
                 description: string;
             };
+            proxy: {
+                type: string;
+                description: string;
+            };
             query?: undefined;
             queries?: undefined;
             n?: undefined;
             engine?: undefined;
+            searchType?: undefined;
+            site?: undefined;
+            excludeSite?: undefined;
+            filetype?: undefined;
+            pdfOnly?: undefined;
+            intitle?: undefined;
+            inurl?: undefined;
+            exactPhrase?: undefined;
+            excludeTerms?: undefined;
+            timeRange?: undefined;
+            region?: undefined;
             safe?: undefined;
             verifyUrls?: undefined;
             images?: undefined;
@@ -250,6 +351,7 @@ export declare const MCP_TOOLS: ({
             depth?: undefined;
             maxPages?: undefined;
             includeYoutube?: undefined;
+            includePdf?: undefined;
             target?: undefined;
             platform?: undefined;
             action?: undefined;
@@ -259,6 +361,7 @@ export declare const MCP_TOOLS: ({
             category?: undefined;
             when?: undefined;
             hnItemId?: undefined;
+            provider?: undefined;
         };
         required: string[];
     };
@@ -297,10 +400,25 @@ export declare const MCP_TOOLS: ({
                 type: string;
                 description: string;
             };
+            proxy: {
+                type: string;
+                description: string;
+            };
             query?: undefined;
             queries?: undefined;
             n?: undefined;
             engine?: undefined;
+            searchType?: undefined;
+            site?: undefined;
+            excludeSite?: undefined;
+            filetype?: undefined;
+            pdfOnly?: undefined;
+            intitle?: undefined;
+            inurl?: undefined;
+            exactPhrase?: undefined;
+            excludeTerms?: undefined;
+            timeRange?: undefined;
+            region?: undefined;
             safe?: undefined;
             verifyUrls?: undefined;
             images?: undefined;
@@ -321,6 +439,7 @@ export declare const MCP_TOOLS: ({
             depth?: undefined;
             maxPages?: undefined;
             includeYoutube?: undefined;
+            includePdf?: undefined;
             target?: undefined;
             platform?: undefined;
             action?: undefined;
@@ -330,6 +449,7 @@ export declare const MCP_TOOLS: ({
             category?: undefined;
             when?: undefined;
             hnItemId?: undefined;
+            provider?: undefined;
         };
         required: string[];
     };
@@ -374,10 +494,25 @@ export declare const MCP_TOOLS: ({
                 type: string;
                 description: string;
             };
+            proxy: {
+                type: string;
+                description: string;
+            };
             query?: undefined;
             queries?: undefined;
             n?: undefined;
             engine?: undefined;
+            searchType?: undefined;
+            site?: undefined;
+            excludeSite?: undefined;
+            filetype?: undefined;
+            pdfOnly?: undefined;
+            intitle?: undefined;
+            inurl?: undefined;
+            exactPhrase?: undefined;
+            excludeTerms?: undefined;
+            timeRange?: undefined;
+            region?: undefined;
             safe?: undefined;
             verifyUrls?: undefined;
             images?: undefined;
@@ -397,6 +532,7 @@ export declare const MCP_TOOLS: ({
             depth?: undefined;
             maxPages?: undefined;
             includeYoutube?: undefined;
+            includePdf?: undefined;
             target?: undefined;
             platform?: undefined;
             action?: undefined;
@@ -406,6 +542,7 @@ export declare const MCP_TOOLS: ({
             category?: undefined;
             when?: undefined;
             hnItemId?: undefined;
+            provider?: undefined;
         };
         required: string[];
     };
@@ -443,9 +580,39 @@ export declare const MCP_TOOLS: ({
                 type: string;
                 description: string;
             };
+            includePdf: {
+                type: string;
+                description: string;
+            };
+            searchType: {
+                type: string;
+                enum: string[];
+                description: string;
+            };
+            site: {
+                type: string;
+                description: string;
+            };
+            timeRange: {
+                type: string;
+                enum: string[];
+                description: string;
+            };
+            proxy: {
+                type: string;
+                description: string;
+            };
             queries?: undefined;
             n?: undefined;
             engine?: undefined;
+            excludeSite?: undefined;
+            filetype?: undefined;
+            pdfOnly?: undefined;
+            intitle?: undefined;
+            inurl?: undefined;
+            exactPhrase?: undefined;
+            excludeTerms?: undefined;
+            region?: undefined;
             safe?: undefined;
             verifyUrls?: undefined;
             images?: undefined;
@@ -477,6 +644,7 @@ export declare const MCP_TOOLS: ({
             category?: undefined;
             when?: undefined;
             hnItemId?: undefined;
+            provider?: undefined;
         };
         required: string[];
     };
@@ -512,10 +680,25 @@ export declare const MCP_TOOLS: ({
                 type: string;
                 description: string;
             };
+            proxy: {
+                type: string;
+                description: string;
+            };
             query?: undefined;
             queries?: undefined;
             n?: undefined;
             engine?: undefined;
+            searchType?: undefined;
+            site?: undefined;
+            excludeSite?: undefined;
+            filetype?: undefined;
+            pdfOnly?: undefined;
+            intitle?: undefined;
+            inurl?: undefined;
+            exactPhrase?: undefined;
+            excludeTerms?: undefined;
+            timeRange?: undefined;
+            region?: undefined;
             safe?: undefined;
             verifyUrls?: undefined;
             images?: undefined;
@@ -543,9 +726,11 @@ export declare const MCP_TOOLS: ({
             depth?: undefined;
             maxPages?: undefined;
             includeYoutube?: undefined;
+            includePdf?: undefined;
             category?: undefined;
             when?: undefined;
             hnItemId?: undefined;
+            provider?: undefined;
         };
         required: string[];
     };
@@ -577,9 +762,24 @@ export declare const MCP_TOOLS: ({
                 type: string;
                 description: string;
             };
+            proxy: {
+                type: string;
+                description: string;
+            };
             queries?: undefined;
             n?: undefined;
             engine?: undefined;
+            searchType?: undefined;
+            site?: undefined;
+            excludeSite?: undefined;
+            filetype?: undefined;
+            pdfOnly?: undefined;
+            intitle?: undefined;
+            inurl?: undefined;
+            exactPhrase?: undefined;
+            excludeTerms?: undefined;
+            timeRange?: undefined;
+            region?: undefined;
             safe?: undefined;
             verifyUrls?: undefined;
             images?: undefined;
@@ -607,11 +807,13 @@ export declare const MCP_TOOLS: ({
             depth?: undefined;
             maxPages?: undefined;
             includeYoutube?: undefined;
+            includePdf?: undefined;
             target?: undefined;
             platform?: undefined;
             action?: undefined;
             sort?: undefined;
             language?: undefined;
+            provider?: undefined;
         };
         required?: undefined;
     };
@@ -625,6 +827,11 @@ export declare const MCP_TOOLS: ({
                 type: string;
                 description: string;
             };
+            provider: {
+                type: string;
+                enum: string[];
+                description: string;
+            };
             limit: {
                 type: string;
                 description: string;
@@ -633,10 +840,25 @@ export declare const MCP_TOOLS: ({
                 type: string;
                 description: string;
             };
+            proxy: {
+                type: string;
+                description: string;
+            };
             query?: undefined;
             queries?: undefined;
             n?: undefined;
             engine?: undefined;
+            searchType?: undefined;
+            site?: undefined;
+            excludeSite?: undefined;
+            filetype?: undefined;
+            pdfOnly?: undefined;
+            intitle?: undefined;
+            inurl?: undefined;
+            exactPhrase?: undefined;
+            excludeTerms?: undefined;
+            timeRange?: undefined;
+            region?: undefined;
             safe?: undefined;
             verifyUrls?: undefined;
             images?: undefined;
@@ -663,6 +885,7 @@ export declare const MCP_TOOLS: ({
             depth?: undefined;
             maxPages?: undefined;
             includeYoutube?: undefined;
+            includePdf?: undefined;
             platform?: undefined;
             action?: undefined;
             sort?: undefined;

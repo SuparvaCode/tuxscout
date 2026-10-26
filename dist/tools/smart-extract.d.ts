@@ -1,13 +1,19 @@
-export type SmartExtractProvider = 'twitter' | 'instagram' | 'reddit' | 'github' | 'tiktok' | 'hackernews' | 'youtube' | 'stackoverflow' | 'arxiv' | 'wikipedia' | 'npm' | 'pypi' | 'webpage';
+import { type ProxyInput } from '../utils/http.js';
+export type SmartExtractProvider = 'twitter' | 'instagram' | 'reddit' | 'github' | 'tiktok' | 'hackernews' | 'youtube' | 'stackoverflow' | 'arxiv' | 'wikipedia' | 'imdb' | 'pdf' | 'npm' | 'pypi' | 'webpage';
+export type ExtractProvider = SmartExtractProvider;
 export interface SmartExtractOptions {
-    /** URL or prefixed target (e.g. "https://x.com/...", "ig:nasa", "npm:tuxscout", "arxiv:2401.00001", "so:node fetch timeout") */
+    /** URL or prefixed target (e.g. "https://x.com/...", "imdb:Inception", "pdf:https://...", "ig:nasa", "npm:tuxscout", "arxiv:2401.00001", "so:node fetch timeout") */
     target: string;
+    /** Optional explicit provider override */
+    provider?: SmartExtractProvider;
     /** Max items/comments/chars depending on provider */
     limit?: number;
-    /** Max markdown characters for generic webpage extraction (default 6000) */
+    /** Max markdown characters for generic webpage or PDF extraction (default 6000) */
     maxChars?: number;
     /** Bypass cache */
     noCache?: boolean;
+    /** Optional HTTP/HTTPS/SOCKS5 proxy URL, host:port, or rotation list */
+    proxy?: ProxyInput;
 }
 export interface SmartExtractResult {
     ok: boolean;
@@ -19,8 +25,8 @@ export interface SmartExtractResult {
     ms: number;
     error?: string;
 }
-export declare function fetchStackOverflow(target: string, limit?: number): Promise<any>;
-export declare function fetchArxiv(target: string, limit?: number): Promise<{
+export declare function fetchStackOverflow(target: string, limit?: number, proxy?: ProxyInput): Promise<any>;
+export declare function fetchArxiv(target: string, limit?: number, proxy?: ProxyInput): Promise<{
     arxivId: string;
     title: string;
     authors: string[];
@@ -31,7 +37,7 @@ export declare function fetchArxiv(target: string, limit?: number): Promise<{
     pdfUrl: string;
     abstract: string;
 }[]>;
-export declare function fetchWikipediaSummary(target: string): Promise<{
+export declare function fetchWikipediaSummary(target: string, proxy?: ProxyInput): Promise<{
     title: any;
     description: any;
     extract: any;
@@ -40,7 +46,7 @@ export declare function fetchWikipediaSummary(target: string): Promise<{
     coordinates: any;
     lastModified: any;
 }>;
-export declare function fetchNpmPackage(target: string): Promise<{
+export declare function fetchNpmPackage(target: string, proxy?: ProxyInput): Promise<{
     name: any;
     version: any;
     description: any;
@@ -54,7 +60,7 @@ export declare function fetchNpmPackage(target: string): Promise<{
     keywords: any;
     npmUrl: string;
 }>;
-export declare function fetchPypiPackage(target: string): Promise<{
+export declare function fetchPypiPackage(target: string, proxy?: ProxyInput): Promise<{
     name: any;
     version: any;
     summary: any;
@@ -66,7 +72,88 @@ export declare function fetchPypiPackage(target: string): Promise<{
     dependencies: any;
     pypiUrl: any;
 }>;
-export declare function extractStructuredWebpage(url: string, maxChars?: number): Promise<{
+export interface ImdbTitleDetails {
+    imdbId: string;
+    url: string;
+    title: string;
+    originalTitle?: string;
+    type?: string;
+    year?: number | string;
+    releaseDate?: string;
+    contentRating?: string;
+    duration?: string;
+    rating?: number;
+    ratingCount?: number;
+    genres?: string[];
+    plot?: string;
+    directors?: string[];
+    creators?: string[];
+    cast?: string[];
+    keywords?: string[];
+    posterUrl?: string;
+    trailerUrl?: string;
+}
+export interface ImdbSearchResultItem {
+    imdbId: string;
+    title: string;
+    type: string;
+    year?: number | string;
+    stars?: string;
+    rank?: number;
+    posterUrl?: string;
+    url: string;
+}
+export interface ImdbExtractPayload {
+    query: string;
+    featured: ImdbTitleDetails | null;
+    results: ImdbSearchResultItem[];
+}
+export declare function fetchImdb(target: string, limit?: number, proxy?: ProxyInput): Promise<ImdbExtractPayload>;
+export declare function parsePdfBuffer(buffer: Buffer, maxChars?: number): {
+    version: string;
+    pageCount: number;
+    title?: string;
+    author?: string;
+    subject?: string;
+    creator?: string;
+    text: string;
+};
+export declare function fetchPdfDocument(target: string, maxChars?: number, limit?: number, proxy?: ProxyInput): Promise<{
+    mode: "search";
+    query: string;
+    count: number;
+    engines: string[];
+    sources: import("./web-search.js").WebSource[];
+    url?: undefined;
+    status?: undefined;
+    contentType?: undefined;
+    byteLength?: undefined;
+    pdfVersion?: undefined;
+    pageCount?: undefined;
+    title?: undefined;
+    author?: undefined;
+    subject?: undefined;
+    creator?: undefined;
+    text?: undefined;
+} | {
+    mode: "document";
+    url: string;
+    status: number;
+    contentType: string;
+    byteLength: number;
+    pdfVersion: string;
+    pageCount: number;
+    title: string;
+    author: string | undefined;
+    subject: string | undefined;
+    creator: string | undefined;
+    text: string;
+    query?: undefined;
+    count?: undefined;
+    engines?: undefined;
+    sources?: undefined;
+}>;
+export declare function extractStructuredWebpage(url: string, maxChars?: number, proxy?: ProxyInput): Promise<{
     url: string;
     status: number;
     metadata: import("../utils/html.js").PageMetadata;

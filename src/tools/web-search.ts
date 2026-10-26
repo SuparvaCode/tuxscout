@@ -9,14 +9,17 @@ import {
   CircuitBreaker,
   clean,
   clearCookieJar,
+   DEFAULT_UA,
   EngineError,
   fetchTextWithJar,
   hasCookies,
   isHttpUrl,
   LruCache,
+  type ProxyInput,
 } from '../utils/http.js';
 import {
   attr,
+  decodeEntities,
   extractTagBlocks,
   firstTag,
   firstText,
@@ -24,11 +27,20 @@ import {
   textOnly,
 } from '../utils/html.js';
 
+export type SearchTimeRange = 'day' | 'week' | 'month' | 'year' | 'any';
+export type SearchType = 'general' | 'pdf' | 'imdb' | 'academic' | 'code' | 'docs' | 'books';
+export type SearchVertical = SearchType;
+
 export interface WebSource {
   title: string;
   url: string;
   description: string;
   engine?: string;
+  isPdf?: boolean;
+  fileType?: string;
+  year?: number;
+  rating?: number;
+  extra?: Record<string, unknown>;
 }
 
 export interface SearchAttempt {
@@ -48,6 +60,30 @@ export interface WebSearchOptions {
   engine?: string;
   noCache?: boolean;
   timeoutMs?: number;
+  /** Optional HTTP/HTTPS/SOCKS5 proxy URL, host:port, or rotation list */
+  proxy?: ProxyInput;
+  /** Search vertical preset ('general' | 'pdf' | 'imdb' | 'academic' | 'code' | 'docs' | 'books') */
+  searchType?: SearchType;
+  /** Restrict search to specific domain(s) (e.g. "imdb.com" or ["arxiv.org", "kernel.org"]) */
+  site?: string | string[];
+  /** Exclude specific domain(s) (e.g. "pinterest.com") */
+  excludeSite?: string | string[];
+  /** Filter by file type / extension (e.g. "pdf", "doc", "csv") */
+  filetype?: string;
+  /** Shorthand to search for PDF documents across web + academic PDF repositories */
+  pdfOnly?: boolean;
+  /** Require term in page title (intitle:) */
+  intitle?: string;
+  /** Require term in page URL (inurl:) */
+  inurl?: string;
+  /** Require exact phrase match */
+  exactPhrase?: string;
+  /** Terms to exclude from results */
+  excludeTerms?: string | string[];
+  /** Recency filter ('day' | 'week' | 'month' | 'year' | 'any') */
+  timeRange?: SearchTimeRange;
+  /** Region/locale hint (e.g. 'us-en', 'uk-en', 'in-en') */
+  region?: string;
 }
 
 export interface WebSearchResult {
@@ -61,6 +97,8 @@ export interface WebSearchResult {
   ms: number;
   intent?: Intent;
   queries_executed?: string[];
+  search_type?: SearchType;
+  searchType?: SearchType;
 }
 
 type ParseResult = { sources: WebSource[]; noResults: boolean };
@@ -97,8 +135,122 @@ const GENERIC_QUERY_TERMS = new Set(
   ).split(/\s+/),
 );
 
-export function queryTerms(query: string): string[] {
+export function stripSearchOperators(query: string): string {
   return String(query || '')
+    .replace(/\b(?:site|filetype|ext):[^\s]+/gi, ' ')
+    .replace(/-\b(?:site|filetype|ext):[^\s]+/gi, ' ')
+    .replace(/\b(?:intitle|inurl):("([^"]+)"|([^\s]+))/gi, ' $2 $3 ')
+    .replace(/(?:^|\s)-[a-zA-Z0-9_.-]+/g, ' ')
+    .replace(/\b(?:AND|OR|NOT)\b/g, ' ')
+    .replace(/["()]/g, ' ');
+}
+
+export function isPdfUrl(u: string): boolean {
+  try {
+    const parsed = new URL(u);
+    const path = parsed.pathname.toLowerCase();
+    return (
+      path.endsWith('.pdf') ||
+      /\/pdf\//i.test(path) ||
+      parsed.searchParams.get('format')?.toLowerCase() === 'pdf' ||
+      parsed.searchParams.get('type')?.toLowerCase() === 'pdf'
+    );
+  } catch {
+    return /\.pdf($|[?#])/i.test(u);
+  }
+}
+
+export function detectFileType(u: string): string | undefined {
+  if (isPdfUrl(u)) return 'pdf';
+  try {
+    const m = new URL(u).pathname.toLowerCase().match(/\.([a-z0-9]{2,5})$/);
+    if (m && ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'json', 'xml', 'txt', 'md', 'epub'].includes(m[1])) {
+      return m[1];
+    }
+  } catch { /* ignore */ }
+  return undefined;
+}
+
+export function buildAdvancedQuery(baseQuery: string, options?: WebSearchOptions): string {
+  let q = clean(baseQuery);
+  if (!options) return q;
+
+  const parts: string[] = [q];
+
+  if (options.exactPhrase) {
+    const phrase = clean(options.exactPhrase).replace(/"/g, '');
+    if (phrase && !q.toLowerCase().includes(`"${phrase.toLowerCase()}"`)) {
+      parts.push(`"${phrase}"`);
+    }
+  }
+  if (options.intitle) {
+    const t = clean(options.intitle);
+    if (t && !/\bintitle:/i.test(q)) {
+      parts.push(t.includes(' ') ? `intitle:"${t}"` : `intitle:${t}`);
+    }
+  }
+  if (options.inurl) {
+    const u = clean(options.inurl);
+    if (u && !/\binurl:/i.test(q)) {
+      parts.push(`inurl:${u}`);
+    }
+  }
+  if (options.site) {
+    const sites = (Array.isArray(options.site) ? options.site : [options.site])
+      .map((s) => clean(s).replace(/^https?:\/\//i, '').replace(/\/.*$/, ''))
+      .filter(Boolean);
+    if (sites.length && !/\bsite:/i.test(q)) {
+      parts.push(
+        sites.length === 1
+          ? `site:${sites[0]}`
+          : `(${sites.map((s) => `site:${s}`).join(' OR ')})`,
+      );
+    }
+  }
+  if (options.excludeSite) {
+    const exSites = (Array.isArray(options.excludeSite) ? options.excludeSite : [options.excludeSite])
+      .map((s) => clean(s).replace(/^https?:\/\//i, '').replace(/\/.*$/, ''))
+      .filter(Boolean);
+    for (const s of exSites) {
+      parts.push(`-site:${s}`);
+    }
+  }
+
+  const wantedFiletype = options.pdfOnly
+    ? 'pdf'
+    : options.searchType === 'pdf'
+      ? 'pdf'
+      : options.filetype
+        ? clean(options.filetype).replace(/^\./, '').toLowerCase()
+        : '';
+
+  if (wantedFiletype && !/\b(?:filetype|ext):/i.test(q)) {
+    parts.push(`filetype:${wantedFiletype}`);
+  }
+
+  if (options.searchType === 'imdb' && !options.site && !/\bsite:imdb\.com/i.test(q)) {
+    parts.push('site:imdb.com');
+  } else if (options.searchType === 'code' && !options.site && !/\bsite:/i.test(q)) {
+    parts.push('(site:github.com OR site:stackoverflow.com OR site:gitlab.com)');
+  } else if (options.searchType === 'docs' && !options.intitle && !options.inurl) {
+    parts.push('(inurl:docs OR intitle:documentation)');
+  }
+
+  if (options.excludeTerms) {
+    const exTerms = Array.isArray(options.excludeTerms)
+      ? options.excludeTerms
+      : [options.excludeTerms];
+    for (const ex of exTerms) {
+      const term = clean(ex).replace(/^-+/, '');
+      if (term) parts.push(term.includes(' ') ? `-"${term}"` : `-${term}`);
+    }
+  }
+
+  return parts.filter(Boolean).join(' ').slice(0, MAX_QUERY_CHARS);
+}
+
+export function queryTerms(query: string): string[] {
+  return stripSearchOperators(query)
     .toLowerCase()
     .replace(/[^a-z0-9\s+]/g, ' ')
     .split(/\s+/)
@@ -123,6 +275,7 @@ export function classifyIntent(query: string): Intent {
 }
 
 export function looksLikeLandingPage(url: string): boolean {
+  if (isPdfUrl(url)) return false;
   try {
     const u = new URL(url);
     const segs = u.pathname.split('/').filter(Boolean);
@@ -130,7 +283,7 @@ export function looksLikeLandingPage(url: string): boolean {
     if (segs.length > 2) return false;
     const path_ = segs.join('/').toLowerCase();
     if (
-      /\b(blog|news|release|releases|changelog|update|updates|post|posts|article|articles|docs?|guides?|announcement|wiki)\b/.test(
+      /\b(blog|news|release|releases|changelog|update|updates|post|posts|article|articles|docs?|guides?|announcement|wiki|title|name|pdf|abs)\b/.test(
         path_,
       )
     ) {
@@ -169,10 +322,11 @@ export function relevance(source: WebSource, terms: string[]): number {
   if (!terms.length) return 1;
   const title = source.title.toLowerCase();
   const desc = (source.description || '').toLowerCase();
+  const url = source.url.toLowerCase();
   let score = 0;
   for (const t of terms) {
     if (title.includes(t)) score += 2;
-    else if (desc.includes(t)) score += 1;
+    else if (desc.includes(t) || url.includes(t)) score += 1;
   }
   return score / (terms.length * 2);
 }
@@ -214,9 +368,13 @@ export function engineRelevanceVerdict(sources: WebSource[], query: string) {
   return { total, strong, ratio: strong / total };
 }
 
-export function rankSources(sources: WebSource[], terms: string[]): WebSource[] {
+export function rankSources(sources: WebSource[], terms: string[], preferPdf = false): WebSource[] {
   return sources
-    .map((s, i) => ({ s, i, r: relevance(s, terms) }))
+    .map((s, i) => {
+      let r = relevance(s, terms);
+      if (preferPdf && (s.isPdf || isPdfUrl(s.url))) r += 0.5;
+      return { s, i, r };
+    })
     .sort((a, b) => b.r - a.r || a.i - b.i)
     .map((x) => x.s);
 }
@@ -280,13 +438,19 @@ function accept(
   url: string,
   description: string,
   engine: string,
+  extraMeta?: Partial<WebSource>,
 ): void {
   if (!title || !isHttpUrl(url) || AD_URL_RE.test(url)) return;
+  const pdf = extraMeta?.isPdf ?? isPdfUrl(url);
+  const fileType = extraMeta?.fileType ?? detectFileType(url);
   out.push({
     title: title.slice(0, 300),
     url,
     description: description.slice(0, 600),
     engine,
+    ...(pdf ? { isPdf: true } : {}),
+    ...(fileType ? { fileType } : {}),
+    ...extraMeta,
   });
 }
 
@@ -407,15 +571,22 @@ function parseBrave(html: string): ParseResult {
   };
 }
 
-async function runWikipedia(query: string, deadline: number): Promise<ParseResult> {
+async function runWikipedia(query: string, deadline: number, proxy?: ProxyInput): Promise<ParseResult> {
+  const cleanQ = clean(stripSearchOperators(query)) || query;
   const url =
     `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
-      query,
+      cleanQ,
     )}&utf8=&format=json&srlimit=10`;
-  const { status, text } = await fetchTextWithJar('wikipedia', url, deadline, {
-    'User-Agent': API_UA,
-    Accept: 'application/json',
-  });
+  const { status, text } = await fetchTextWithJar(
+    'wikipedia',
+    url,
+    deadline,
+    {
+      'User-Agent': API_UA,
+      Accept: 'application/json',
+    },
+    proxy,
+  );
   if (status >= 400) throw new EngineError('http_error', status, `HTTP ${status}`);
   let data: { query?: { search?: Array<{ title: string; snippet: string }> } };
   try {
@@ -432,6 +603,176 @@ async function runWikipedia(query: string, deadline: number): Promise<ParseResul
     accept(out, clean(item.title), pageUrl, textOnly(item.snippet || ''), 'wikipedia');
   }
   return { sources: out, noResults: items.length === 0 };
+}
+
+interface ImdbSuggestionItem {
+  id: string;
+  l: string;
+  q?: string;
+  qid?: string;
+  y?: number;
+  yr?: string;
+  s?: string;
+  rank?: number;
+  i?: { imageUrl?: string; width?: number; height?: number };
+}
+
+async function runImdbSearch(query: string, deadline: number, proxy?: ProxyInput): Promise<ParseResult> {
+  const cleanQ = clean(stripSearchOperators(query).replace(/\bimdb\b/gi, '')) || clean(query);
+  const alnum = cleanQ.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const firstChar = alnum[0] || 'x';
+  const slug = cleanQ.toLowerCase().replace(/\s+/g, '_').slice(0, 60);
+  const url = `https://v3.sg.media-imdb.com/suggestion/${firstChar}/${encodeURIComponent(slug)}.json`;
+
+  const { status, text } = await fetchTextWithJar(
+    'imdb',
+    url,
+    deadline,
+    {
+      'User-Agent': DEFAULT_UA,
+      Accept: 'application/json',
+      Referer: 'https://www.imdb.com/',
+    },
+    proxy,
+  );
+  if (status >= 400) throw new EngineError('http_error', status, `HTTP ${status}`);
+  let data: { d?: ImdbSuggestionItem[] };
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new EngineError('bad_json', status);
+  }
+  const items = Array.isArray(data?.d) ? data.d : [];
+  const out: WebSource[] = [];
+  for (const item of items) {
+    if (!item.id || !item.l) continue;
+    const isTitle = item.id.startsWith('tt');
+    const isName = item.id.startsWith('nm');
+    const itemUrl = isTitle
+      ? `https://www.imdb.com/title/${item.id}/`
+      : isName
+        ? `https://www.imdb.com/name/${item.id}/`
+        : `https://www.imdb.com/find/?q=${encodeURIComponent(item.l)}`;
+    const yearStr = item.y ? ` (${item.y})` : item.yr ? ` (${item.yr})` : '';
+    const typeLabel = item.q || item.qid || (isName ? 'Person' : 'Title');
+    const title = `${clean(item.l)}${yearStr} [${typeLabel}] — IMDb`;
+    const descParts = [
+      `IMDb ID: ${item.id}`,
+      typeLabel ? `Type: ${typeLabel}` : '',
+      item.y ? `Release Year: ${item.y}` : item.yr ? `Years: ${item.yr}` : '',
+      item.s ? `Stars / Known For: ${item.s}` : '',
+      item.rank ? `IMDb Popularity Rank: #${item.rank}` : '',
+    ].filter(Boolean);
+
+    accept(out, title, itemUrl, descParts.join(' · '), 'imdb', {
+      year: item.y,
+      extra: {
+        imdbId: item.id,
+        type: typeLabel,
+        stars: item.s,
+        rank: item.rank,
+        poster: item.i?.imageUrl,
+      },
+    });
+  }
+  return { sources: out, noResults: items.length === 0 };
+}
+
+async function runArxivSearch(query: string, deadline: number, proxy?: ProxyInput): Promise<ParseResult> {
+  const cleanQ = clean(stripSearchOperators(query)) || clean(query);
+  const url = `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(cleanQ)}&start=0&max_results=12`;
+  const { status, text } = await fetchTextWithJar(
+    'arxiv',
+    url,
+    deadline,
+    {
+      'User-Agent': API_UA,
+      Accept: 'application/atom+xml,text/xml,*/*',
+    },
+    proxy,
+  );
+  if (status >= 400) throw new EngineError('http_error', status, `HTTP ${status}`);
+
+  const entries = text.match(/<entry>[\s\S]*?<\/entry>/gi) || [];
+  const out: WebSource[] = [];
+  for (const entry of entries) {
+    const rawId = clean(entry.match(/<id>([\s\S]*?)<\/id>/i)?.[1] || '');
+    const title = clean(decodeEntities(entry.match(/<title>([\s\S]*?)<\/title>/i)?.[1] || ''));
+    const summary = clean(decodeEntities(entry.match(/<summary>([\s\S]*?)<\/summary>/i)?.[1] || ''));
+    const published = clean(entry.match(/<published>([\s\S]*?)<\/published>/i)?.[1] || '').slice(0, 10);
+    const authors = [...entry.matchAll(/<name>([\s\S]*?)<\/name>/gi)].map((m) => clean(m[1])).slice(0, 4);
+    if (!rawId || !title) continue;
+
+    const arxivId = rawId.replace(/^https?:\/\/arxiv\.org\/abs\//i, '').replace(/v\d+$/, '');
+    const pdfUrl = `https://arxiv.org/pdf/${arxivId}.pdf`;
+    const yearNum = published ? Number(published.slice(0, 4)) : undefined;
+    const desc = `${published ? `[${published}] ` : ''}${authors.length ? `Authors: ${authors.join(', ')}. ` : ''}${summary}`;
+    accept(out, `[PDF] ${title}`, pdfUrl, desc, 'arxiv', {
+      isPdf: true,
+      fileType: 'pdf',
+      year: Number.isFinite(yearNum) ? yearNum : undefined,
+      extra: { arxivId, absUrl: rawId, authors },
+    });
+  }
+  return { sources: out, noResults: entries.length === 0 };
+}
+
+async function runOpenAlexSearch(query: string, deadline: number, proxy?: ProxyInput): Promise<ParseResult> {
+  const cleanQ = clean(stripSearchOperators(query)) || clean(query);
+  const url = `https://api.openalex.org/works?search=${encodeURIComponent(cleanQ)}&per-page=12`;
+  const { status, text } = await fetchTextWithJar(
+    'openalex',
+    url,
+    deadline,
+    {
+      'User-Agent': API_UA,
+      Accept: 'application/json',
+    },
+    proxy,
+  );
+  if (status >= 400) throw new EngineError('http_error', status, `HTTP ${status}`);
+  let data: { results?: Array<Record<string, any>> };
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new EngineError('bad_json', status);
+  }
+  const results = Array.isArray(data?.results) ? data.results : [];
+  const out: WebSource[] = [];
+  for (const w of results) {
+    const title = clean(w.title || w.display_name || '');
+    const pdfUrl =
+      w.best_oa_location?.pdf_url ||
+      w.primary_location?.pdf_url ||
+      (typeof w.open_access?.oa_url === 'string' && isPdfUrl(w.open_access.oa_url) ? w.open_access.oa_url : '');
+    const landingUrl = pdfUrl || w.open_access?.oa_url || w.primary_location?.landing_page_url || w.doi || w.id;
+    if (!title || !landingUrl || !isHttpUrl(landingUrl)) continue;
+
+    const year = Number(w.publication_year) || undefined;
+    const citedBy = Number(w.cited_by_count) || 0;
+    const venue = clean(w.primary_location?.source?.display_name || '');
+    const authors = Array.isArray(w.authorships)
+      ? w.authorships.map((a: any) => clean(a?.author?.display_name)).filter(Boolean).slice(0, 4)
+      : [];
+
+    const desc = [
+      year ? `Year: ${year}` : '',
+      venue ? `Venue: ${venue}` : '',
+      authors.length ? `Authors: ${authors.join(', ')}` : '',
+      citedBy ? `Citations: ${citedBy}` : '',
+      pdfUrl ? `Direct PDF available` : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+
+    const isPdf = Boolean(pdfUrl) || isPdfUrl(landingUrl);
+    accept(out, isPdf ? `[PDF] ${title}` : title, landingUrl, desc, 'openalex', {
+      isPdf,
+      fileType: isPdf ? 'pdf' : undefined,
+      year,
+    });
+  }
+  return { sources: out, noResults: results.length === 0 };
 }
 
 function looksChallenged(engine: string, status: number, html: string): string | null {
@@ -463,34 +804,62 @@ function looksChallenged(engine: string, status: number, html: string): string |
 type HtmlEngine = {
   name: string;
   jar: string;
-  url: (q: string) => string;
+  url: (q: string, opts?: WebSearchOptions) => string;
   parse?: (html: string) => ParseResult;
-  customRun?: (q: string, deadline: number) => Promise<ParseResult>;
+  customRun?: (q: string, deadline: number, proxy?: ProxyInput) => Promise<ParseResult>;
 };
+
+function ddgTimeParam(tr?: SearchTimeRange): string {
+  if (tr === 'day') return '&df=d';
+  if (tr === 'week') return '&df=w';
+  if (tr === 'month') return '&df=m';
+  if (tr === 'year') return '&df=y';
+  return '';
+}
+
+function braveTimeParam(tr?: SearchTimeRange): string {
+  if (tr === 'day') return '&tf=pd';
+  if (tr === 'week') return '&tf=pw';
+  if (tr === 'month') return '&tf=pm';
+  if (tr === 'year') return '&tf=py';
+  return '';
+}
+
+function yahooTimeParam(tr?: SearchTimeRange): string {
+  if (tr === 'day') return '&btf=d';
+  if (tr === 'week') return '&btf=w';
+  if (tr === 'month') return '&btf=m';
+  if (tr === 'year') return '&btf=y';
+  return '';
+}
 
 const ENGINES: HtmlEngine[] = [
   {
     name: 'duckduckgo',
     jar: 'ddg',
-    url: (q) => `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`,
+    url: (q, opts) =>
+      `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}${ddgTimeParam(opts?.timeRange)}${opts?.region ? `&kl=${encodeURIComponent(opts.region)}` : ''}`,
     parse: parseDuckDuckGoHtml,
   },
   {
     name: 'duckduckgo-lite',
     jar: 'ddg',
-    url: (q) => `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(q)}`,
+    url: (q, opts) =>
+      `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(q)}${ddgTimeParam(opts?.timeRange)}`,
     parse: parseDuckDuckGoLite,
   },
   {
     name: 'brave',
     jar: 'brave',
-    url: (q) => `https://search.brave.com/search?q=${encodeURIComponent(q)}&source=web`,
+    url: (q, opts) =>
+      `https://search.brave.com/search?q=${encodeURIComponent(q)}&source=web${braveTimeParam(opts?.timeRange)}`,
     parse: parseBrave,
   },
   {
     name: 'yahoo',
     jar: 'yahoo',
-    url: (q) => `https://in.search.yahoo.com/search?p=${encodeURIComponent(q)}&n=20`,
+    url: (q, opts) =>
+      `https://in.search.yahoo.com/search?p=${encodeURIComponent(q)}&n=20${yahooTimeParam(opts?.timeRange)}`,
     parse: parseYahoo,
   },
   {
@@ -500,6 +869,24 @@ const ENGINES: HtmlEngine[] = [
     parse: parseBing,
   },
   {
+    name: 'imdb',
+    jar: 'imdb',
+    url: () => '',
+    customRun: runImdbSearch,
+  },
+  {
+    name: 'arxiv',
+    jar: 'arxiv',
+    url: () => '',
+    customRun: runArxivSearch,
+  },
+  {
+    name: 'openalex',
+    jar: 'openalex',
+    url: () => '',
+    customRun: runOpenAlexSearch,
+  },
+  {
     name: 'wikipedia',
     jar: 'wikipedia',
     url: () => '',
@@ -507,12 +894,24 @@ const ENGINES: HtmlEngine[] = [
   },
 ];
 
-function configuredEngines(): HtmlEngine[] {
+function configuredEngines(options?: WebSearchOptions): HtmlEngine[] {
+  const searchType = options?.searchType;
+  const isPdfSearch = Boolean(options?.pdfOnly || options?.filetype?.toLowerCase() === 'pdf' || searchType === 'pdf');
+
+  if (searchType === 'imdb') {
+    return ENGINES.filter((e) => ['imdb', 'duckduckgo', 'brave', 'yahoo'].includes(e.name));
+  }
+  if (searchType === 'academic') {
+    return ENGINES.filter((e) => ['arxiv', 'openalex', 'duckduckgo', 'brave', 'yahoo'].includes(e.name));
+  }
+  if (isPdfSearch) {
+    return ENGINES.filter((e) => ['duckduckgo', 'brave', 'yahoo', 'arxiv', 'openalex', 'duckduckgo-lite'].includes(e.name));
+  }
+
   const raw = (process.env.WEB_ENGINE_ORDER || '').toLowerCase();
   if (!raw) {
     // By default matches Delphos: duckduckgo -> duckduckgo-lite -> brave -> yahoo -> wikipedia
-    // (bing is available when explicitly pinned or added to WEB_ENGINE_ORDER)
-    return ENGINES.filter((e) => e.name !== 'bing');
+    return ENGINES.filter((e) => !['bing', 'imdb', 'arxiv', 'openalex'].includes(e.name));
   }
   const wanted = raw
     .split(',')
@@ -524,16 +923,25 @@ function configuredEngines(): HtmlEngine[] {
   return picked.length ? [...new Set(picked)] : ENGINES;
 }
 
-async function runEngine(engine: HtmlEngine, query: string, deadline: number): Promise<ParseResult> {
+async function runEngine(
+  engine: HtmlEngine,
+  query: string,
+  deadline: number,
+  options?: WebSearchOptions,
+): Promise<ParseResult> {
   const engineDeadline = Math.min(deadline, Date.now() + ENGINE_TIMEOUT_MS);
+  const proxy = options?.proxy;
   if (engine.customRun) {
-    return engine.customRun(query, engineDeadline);
+    return engine.customRun(query, engineDeadline, proxy);
   }
+  const compiledQuery = buildAdvancedQuery(query, options);
+  const targetUrl = engine.url(compiledQuery, options);
   let { status, text: html } = await fetchTextWithJar(
     engine.jar,
-    engine.url(query),
+    targetUrl,
     engineDeadline,
     BROWSER_HEADERS,
+    proxy,
   );
   // Stale Yahoo YBV cookie retry
   if (
@@ -545,9 +953,10 @@ async function runEngine(engine: HtmlEngine, query: string, deadline: number): P
     clearCookieJar(engine.jar);
     ({ status, text: html } = await fetchTextWithJar(
       engine.jar,
-      engine.url(query),
+      targetUrl,
       engineDeadline,
       BROWSER_HEADERS,
+      proxy,
     ));
   }
   const challenge = looksChallenged(engine.name, status, html);
@@ -561,11 +970,14 @@ async function runEngine(engine: HtmlEngine, query: string, deadline: number): P
   return parsed;
 }
 
+const API_VERTICAL_ENGINES = new Set(['wikipedia', 'imdb', 'arxiv', 'openalex']);
+
 async function searchSingle(
   query: string,
   n: number,
   only?: string,
   budgetMs = TOTAL_BUDGET_MS,
+  options?: WebSearchOptions,
 ) {
   const started = Date.now();
   const deadline = started + budgetMs;
@@ -577,13 +989,19 @@ async function searchSingle(
   const terms = queryTerms(query);
   const subject = subjectTerms(query);
   const intent = classifyIntent(query);
+  const preferPdf = Boolean(
+    options?.pdfOnly ||
+      options?.filetype?.toLowerCase() === 'pdf' ||
+      options?.searchType === 'pdf' ||
+      /\bfiletype:pdf\b/i.test(query),
+  );
 
-  const pool = only ? ENGINES : configuredEngines();
+  const pool = only ? ENGINES : configuredEngines(options);
   for (const engine of breaker.order(pool, only)) {
     if (Date.now() > deadline - 500) break;
     const t0 = Date.now();
     try {
-      const parsed = await runEngine(engine, query, deadline);
+      const parsed = await runEngine(engine, query, deadline, options);
       breaker.reportOk(engine.name);
       attempts.push({
         engine: engine.name,
@@ -594,19 +1012,25 @@ async function searchSingle(
       });
       if (parsed.noResults) sawNoResults = true;
       if (parsed.sources.length) {
-        const kept = parsed.sources.filter((s) => isWorthKeeping(s, terms, intent, subject));
+        let kept = API_VERTICAL_ENGINES.has(engine.name)
+          ? parsed.sources
+          : parsed.sources.filter((s) => isWorthKeeping(s, terms, intent, subject));
+        if (options?.pdfOnly) {
+          const pdfs = kept.filter((s) => s.isPdf || isPdfUrl(s.url));
+          if (pdfs.length > 0) kept = pdfs;
+        }
         const verdict = engineRelevanceVerdict(kept, query);
-        if (kept.length && verdict.ratio < MIN_ENGINE_RELEVANCE && engine.name !== 'wikipedia') {
+        if (kept.length && verdict.ratio < MIN_ENGINE_RELEVANCE && !API_VERTICAL_ENGINES.has(engine.name)) {
           attempts[attempts.length - 1].reason = `off_topic ${verdict.strong}/${verdict.total}`;
           continue;
         }
         if (kept.length) {
-          merged = dedupe(merged.concat(rankSources(kept, terms)));
+          merged = dedupe(merged.concat(rankSources(kept, terms, preferPdf)));
           used.push(engine.name);
         }
       }
       if (merged.length >= Math.min(n, MIN_GOOD_RESULTS)) break;
-      if (sawNoResults && !merged.length && engine.name !== 'wikipedia') break;
+      if (sawNoResults && !merged.length && !API_VERTICAL_ENGINES.has(engine.name)) break;
     } catch (err) {
       const e = err as EngineError;
       breaker.reportFail(engine.name, e.reason || 'error');
@@ -680,15 +1104,36 @@ export async function webSearch(options: WebSearchOptions): Promise<WebSearchRes
     throw new Error('webSearch requires a non-empty "query" or "queries" array.');
   }
 
-  const cacheKey = `${n}:${only || ''}:${queries.map((q) => q.toLowerCase()).join('|')}`;
+  const filterKey = JSON.stringify({
+    searchType: options.searchType,
+    site: options.site,
+    excludeSite: options.excludeSite,
+    filetype: options.filetype,
+    pdfOnly: options.pdfOnly,
+    intitle: options.intitle,
+    inurl: options.inurl,
+    exactPhrase: options.exactPhrase,
+    excludeTerms: options.excludeTerms,
+    timeRange: options.timeRange,
+    region: options.region,
+  });
+  const cacheKey = `${n}:${only || ''}:${filterKey}:${queries.map((q) => q.toLowerCase()).join('|')}`;
   if (!options.noCache) {
     const hit = cache.get(cacheKey);
     if (hit) return { ...hit, cached: true };
   }
 
+  const compiledQueries = queries.map((q) => buildAdvancedQuery(q, options));
+
   if (queries.length === 1) {
-    const res = await searchSingle(queries[0], n, only, budgetMs);
-    const body = { ...res, queries_executed: queries };
+    const res = await searchSingle(queries[0], n, only, budgetMs, options);
+    const body: Omit<WebSearchResult, 'cached'> = {
+      ...res,
+      queries_executed: compiledQueries,
+      ...(options.searchType
+        ? { search_type: options.searchType, searchType: options.searchType }
+        : {}),
+    };
     if (body.sources.length || body.no_results) {
       cache.set(cacheKey, body);
     }
@@ -697,7 +1142,7 @@ export async function webSearch(options: WebSearchOptions): Promise<WebSearchRes
 
   const started = Date.now();
   const settled = await Promise.allSettled(
-    queries.map((q) => searchSingle(q, n, only, budgetMs)),
+    queries.map((q) => searchSingle(q, n, only, budgetMs, options)),
   );
 
   const attempts: SearchAttempt[] = [];
@@ -725,14 +1170,17 @@ export async function webSearch(options: WebSearchOptions): Promise<WebSearchRes
     if (s.value.no_results) anyNoResults = true;
   }
 
+  const preferPdf = Boolean(
+    options.pdfOnly || options.filetype?.toLowerCase() === 'pdf' || options.searchType === 'pdf',
+  );
   const union = [...new Set(queries.flatMap((q) => queryTerms(q)))];
-  const sources = rankSources(mergeQueries(perQuery, n * 2), union).slice(0, n);
+  const sources = rankSources(mergeQueries(perQuery, n * 2), union, preferPdf).slice(0, n);
   const internet_data = sources
     .map((s) => s.description || s.title)
     .join(' ')
     .trim();
 
-  const body = {
+  const body: Omit<WebSearchResult, 'cached'> = {
     sources,
     internet_data,
     engines: used,
@@ -741,11 +1189,50 @@ export async function webSearch(options: WebSearchOptions): Promise<WebSearchRes
     no_results: anyNoResults && !sources.length && perQuery.every((p) => !p.length),
     ms: Date.now() - started,
     intent: classifyIntent(queries[0]),
-    queries_executed: queries,
+    queries_executed: compiledQueries,
+    ...(options.searchType
+      ? { search_type: options.searchType, searchType: options.searchType }
+      : {}),
   };
 
   if (body.sources.length || body.no_results) {
     cache.set(cacheKey, body);
   }
   return { ...body, cached: false };
+}
+
+/**
+ * Dedicated IMDb search helper (movies, TV series, actors, directors).
+ */
+export async function searchImdb(
+  query: string,
+  nOrOptions: number | Omit<WebSearchOptions, 'query' | 'searchType'> = {},
+  proxy?: ProxyInput,
+): Promise<WebSearchResult> {
+  const opts: Omit<WebSearchOptions, 'query' | 'searchType'> =
+    typeof nOrOptions === 'number' ? { n: nOrOptions, proxy } : { ...nOrOptions, ...(proxy ? { proxy } : {}) };
+  return webSearch({
+    ...opts,
+    query,
+    searchType: 'imdb',
+  });
+}
+
+/**
+ * Dedicated PDF search helper across web search engines + ArXiv + OpenAlex.
+ */
+export async function searchPdf(
+  query: string,
+  nOrOptions: number | Omit<WebSearchOptions, 'query' | 'searchType' | 'pdfOnly'> = {},
+  proxy?: ProxyInput,
+): Promise<WebSearchResult> {
+  const opts: Omit<WebSearchOptions, 'query' | 'searchType' | 'pdfOnly'> =
+    typeof nOrOptions === 'number' ? { n: nOrOptions, proxy } : { ...nOrOptions, ...(proxy ? { proxy } : {}) };
+  return webSearch({
+    ...opts,
+    query,
+    searchType: 'pdf',
+    pdfOnly: true,
+    filetype: 'pdf',
+  });
 }

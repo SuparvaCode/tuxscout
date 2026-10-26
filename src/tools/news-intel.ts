@@ -4,7 +4,7 @@
 // Reddit News subreddits, and direct Tech/Security/World RSS feeds (TechCrunch, ArsTechnica,
 // The Verge, Lobsters, BleepingComputer, BBC World) with deduplication and time filtering.
 
-import { BROWSER_HEADERS, clean, LruCache } from '../utils/http.js';
+import { BROWSER_HEADERS, clean, LruCache, proxyFetch, type ProxyInput } from '../utils/http.js';
 import { decodeEntities, textOnly } from '../utils/html.js';
 import { fetchRedditSubreddit } from './social-intel.js';
 
@@ -49,6 +49,8 @@ export interface NewsIntelOptions {
   hnItemId?: string | number;
   /** Bypass cache */
   noCache?: boolean;
+  /** Optional HTTP/HTTPS/SOCKS5 proxy URL or proxy list for rotation */
+  proxy?: ProxyInput;
 }
 
 export interface NewsIntelResult {
@@ -235,14 +237,20 @@ function parseXmlFeed(xml: string, fallbackSource: string): NewsItem[] {
   return out;
 }
 
-async function fetchRssSource(name: string, url: string, limit = 10): Promise<NewsItem[]> {
+async function fetchRssSource(
+  name: string,
+  url: string,
+  limit = 10,
+  proxy?: ProxyInput,
+): Promise<NewsItem[]> {
   try {
-    const res = await fetch(url, {
+    const res = await proxyFetch(url, {
       headers: {
         'User-Agent': BROWSER_HEADERS['User-Agent'],
         Accept: 'application/rss+xml,application/atom+xml,application/xml,text/xml,*/*;q=0.8',
       },
       signal: AbortSignal.timeout(6_500),
+      proxy,
     });
     if (!res.ok) return [];
     const xml = await res.text();
@@ -256,24 +264,27 @@ export async function fetchGoogleNewsSearch(
   query: string,
   when: NewsTimeframe = '24h',
   limit = 12,
+  proxy?: ProxyInput,
 ): Promise<NewsItem[]> {
   const whenSuffix = when && when !== 'any' ? ` when:${when}` : '';
   const q = encodeURIComponent(`${query.trim()}${whenSuffix}`);
   const url = `https://news.google.com/rss/search?q=${q}&hl=en-US&gl=US&ceid=US:en`;
-  return fetchRssSource('Google News', url, limit);
+  return fetchRssSource('Google News', url, limit, proxy);
 }
 
 export async function fetchHackerNews(
   query?: string,
   limit = 12,
+  proxy?: ProxyInput,
 ): Promise<NewsItem[]> {
   try {
     const endpoint = query
       ? `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(query)}&tags=story&hitsPerPage=${Math.min(30, limit)}`
       : `https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=${Math.min(30, limit)}`;
-    const res = await fetch(endpoint, {
+    const res = await proxyFetch(endpoint, {
       headers: { 'User-Agent': 'TuxScout/1.1' },
       signal: AbortSignal.timeout(6_000),
+      proxy,
     });
     if (!res.ok) return [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -294,12 +305,17 @@ export async function fetchHackerNews(
   }
 }
 
-export async function fetchHackerNewsItem(itemId: string | number, maxComments = 15) {
+export async function fetchHackerNewsItem(
+  itemId: string | number,
+  maxComments = 15,
+  proxy?: ProxyInput,
+) {
   const id = String(itemId).replace(/\D/g, '');
   if (!id) throw new Error(`Invalid HackerNews item ID: ${itemId}`);
-  const res = await fetch(`https://hn.algolia.com/api/v1/items/${id}`, {
+  const res = await proxyFetch(`https://hn.algolia.com/api/v1/items/${id}`, {
     headers: { 'User-Agent': 'TuxScout/1.1' },
     signal: AbortSignal.timeout(7_000),
+    proxy,
   });
   if (!res.ok) throw new Error(`HackerNews item ${id} HTTP ${res.status}`);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -341,7 +357,7 @@ export async function newsIntel(options: NewsIntelOptions = {}): Promise<NewsInt
     (query && /news\.ycombinator\.com\/item\?id=(\d+)/i.exec(query)?.[1]);
 
   if (hnIdMatch) {
-    const disc = await fetchHackerNewsItem(hnIdMatch, limit);
+    const disc = await fetchHackerNewsItem(hnIdMatch, limit, options.proxy);
     const lines = [
       `# Hacker News Story: ${disc.title}`,
       `- **URL:** ${disc.url}`,
@@ -382,31 +398,36 @@ export async function newsIntel(options: NewsIntelOptions = {}): Promise<NewsInt
   const tasks: Array<Promise<NewsItem[]>> = [];
 
   if (query) {
-    tasks.push(fetchGoogleNewsSearch(query, when, limit));
-    tasks.push(fetchHackerNews(query, Math.ceil(limit / 2)));
+    tasks.push(fetchGoogleNewsSearch(query, when, limit, options.proxy));
+    tasks.push(fetchHackerNews(query, Math.ceil(limit / 2), options.proxy));
   } else if (category === 'hn') {
-    tasks.push(fetchHackerNews(undefined, limit));
+    tasks.push(fetchHackerNews(undefined, limit, options.proxy));
   } else if (category === 'top') {
-    tasks.push(fetchHackerNews(undefined, Math.ceil(limit / 2)));
+    tasks.push(fetchHackerNews(undefined, Math.ceil(limit / 2), options.proxy));
     tasks.push(
       fetchRssSource(
         'Google News Top',
         'https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en',
         Math.ceil(limit / 2),
+        options.proxy,
       ),
     );
-    tasks.push(fetchRssSource('TechCrunch', 'https://techcrunch.com/feed/', 5));
+    tasks.push(fetchRssSource('TechCrunch', 'https://techcrunch.com/feed/', 5, options.proxy));
   } else {
     const feeds = CURATED_RSS_FEEDS[category] || CURATED_RSS_FEEDS.tech;
     for (const f of feeds) {
-      tasks.push(fetchRssSource(f.name, f.url, Math.ceil(limit / feeds.length) + 3));
+      tasks.push(
+        fetchRssSource(f.name, f.url, Math.ceil(limit / feeds.length) + 3, options.proxy),
+      );
     }
     if (category === 'tech' || category === 'ai' || category === 'opensource') {
-      tasks.push(fetchHackerNews(category === 'ai' ? 'LLM OR AI' : undefined, 6));
+      tasks.push(
+        fetchHackerNews(category === 'ai' ? 'LLM OR AI' : undefined, 6, options.proxy),
+      );
     }
     if (category === 'linux') {
       tasks.push(
-        fetchRedditSubreddit('linux', 'hot', 5)
+        fetchRedditSubreddit('linux', 'hot', 5, options.proxy)
           .then((posts) =>
             posts.map((p) => ({
               title: p.title,

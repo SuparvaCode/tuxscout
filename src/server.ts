@@ -5,8 +5,14 @@
 
 import http from 'node:http';
 import crypto from 'node:crypto';
-import { clean } from './utils/http.js';
-import { webSearch } from './tools/web-search.js';
+import { clean, setGlobalProxy, type ProxyInput } from './utils/http.js';
+import {
+  searchImdb,
+  searchPdf,
+  webSearch,
+  type SearchTimeRange,
+  type SearchVertical,
+} from './tools/web-search.js';
 import { downloadImages, imageSearch, type SafeSearch } from './tools/image-search.js';
 import { fetchMarkdown, fetchMarkdownBatch } from './tools/markdown-fetch.js';
 import {
@@ -25,20 +31,21 @@ import {
 import { deepResearch, type ResearchDepth } from './tools/deep-research.js';
 import { socialIntel, type SocialAction, type SocialPlatform } from './tools/social-intel.js';
 import { newsIntel, type NewsCategory, type NewsRecency } from './tools/news-intel.js';
-import { smartExtract } from './tools/smart-extract.js';
+import { smartExtract, type ExtractProvider } from './tools/smart-extract.js';
 import { MCP_TOOLS } from './mcp.js';
 
 export interface ServerOptions {
   port?: number;
   host?: string;
   secret?: string;
+  proxy?: ProxyInput;
 }
 
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers':
-    'Content-Type, Authorization, apikey, x-client-info, x-api-key, x-delphos-secret',
+    'Content-Type, Authorization, apikey, x-client-info, x-api-key, x-delphos-secret, x-proxy',
 };
 
 function safeEqual(a: string, b: string): boolean {
@@ -96,6 +103,9 @@ async function parseParams(req: http.IncomingMessage, urlObj: URL): Promise<Reco
 export async function startServer(options: ServerOptions = {}): Promise<http.Server> {
   const port = Number(options.port || process.env.PORT || 8787);
   const host = options.host || process.env.HOST || '0.0.0.0';
+  if (options.proxy) {
+    setGlobalProxy(options.proxy);
+  }
   const configuredSecret =
     options.secret ??
     process.env.AGENT_TOOLS_SECRET ??
@@ -134,6 +144,9 @@ export async function startServer(options: ServerOptions = {}): Promise<http.Ser
       return;
     }
 
+    const reqProxy: ProxyInput | undefined =
+      params.proxy ?? (req.headers['x-proxy'] as string | undefined) ?? options.proxy;
+
     try {
       // ── 1. Health & System Diagnostics ────────────────────────────────────
       if (pathname === '/' || pathname === '/health') {
@@ -168,6 +181,8 @@ export async function startServer(options: ServerOptions = {}): Promise<http.Ser
           endpoints: [
             'GET      /schema (AI Agent OpenAI/Anthropic/MCP tool schemas)',
             'GET/POST /search (or /delphos-web-search, /apis/v1/search)',
+            'GET/POST /imdb (IMDb movie/TV/actor search & rich title dossier extraction)',
+            'GET/POST /pdf (PDF document search & direct PDF text/metadata extraction)',
             'GET/POST /images (or /delphos-image-search, /apis/v1/images)',
             'POST     /images/download',
             'GET/POST /fetch',
@@ -176,7 +191,7 @@ export async function startServer(options: ServerOptions = {}): Promise<http.Ser
             'POST     /research',
             'GET/POST /social (Zero-browser Twitter/X, Instagram, Reddit, GitHub, TikTok)',
             'GET/POST /news (Live Google News, Hacker News, Reddit News, Curated Tech/AI/World RSS)',
-            'GET/POST /extract (Zero-browser Smart Extract for StackOverflow, ArXiv, Wiki, NPM, PyPI, Web)',
+            'GET/POST /extract (Zero-browser Smart Extract for IMDb, PDF, StackOverflow, ArXiv, Wiki, NPM, PyPI, Web)',
           ],
         });
         return;
@@ -205,6 +220,18 @@ export async function startServer(options: ServerOptions = {}): Promise<http.Ser
           n: params.n ? Number(params.n) : undefined,
           engine: params.engine,
           noCache: Boolean(params.noCache),
+          proxy: reqProxy,
+          searchType: (params.searchType ?? params.type) as SearchVertical | undefined,
+          site: params.site,
+          excludeSite: params.excludeSite,
+          filetype: params.filetype ?? params.ext,
+          pdfOnly: params.pdfOnly !== undefined ? Boolean(params.pdfOnly) : Boolean(params.pdf),
+          intitle: params.intitle,
+          inurl: params.inurl,
+          exactPhrase: params.exactPhrase ?? params.exact,
+          excludeTerms: params.excludeTerms ?? params.exclude,
+          timeRange: (params.timeRange ?? params.when) as SearchTimeRange | undefined,
+          region: params.region,
         });
         if (result.sources.length || result.no_results) {
           sendJson(res, 200, result);
@@ -216,6 +243,61 @@ export async function startServer(options: ServerOptions = {}): Promise<http.Ser
             attempts: result.attempts,
           });
         }
+        return;
+      }
+
+      // ── 2b. IMDb Search & Title/Person Dossier Extraction ─────────────────
+      if (pathname === '/imdb' || pathname === '/apis/v1/imdb') {
+        const target = clean(params.target ?? params.query ?? params.q ?? params.id);
+        if (!target) {
+          sendJson(res, 400, { error: 'Missing "query" or "target" parameter.' });
+          return;
+        }
+        const limit = (params.limit ?? params.n) ? Number(params.limit ?? params.n) : 8;
+        if (params.searchOnly || params.search) {
+          const result = await searchImdb(target, limit, reqProxy);
+          sendJson(res, 200, result);
+          return;
+        }
+        const prefixed =
+          /^(imdb:|https?:\/\/|(?:tt|nm)\d{5,10}$)/i.test(target)
+            ? target
+            : `imdb:${target}`;
+        const result = await smartExtract({
+          target: prefixed,
+          provider: 'imdb',
+          limit,
+          proxy: reqProxy,
+        });
+        sendJson(res, result.ok ? 200 : 502, result);
+        return;
+      }
+
+      // ── 2c. PDF Search & Direct PDF Text Extraction ───────────────────────
+      if (pathname === '/pdf' || pathname === '/apis/v1/pdf') {
+        const target = clean(params.url ?? params.target ?? params.query ?? params.q);
+        if (!target) {
+          sendJson(res, 400, { error: 'Missing "query" or "url" parameter.' });
+          return;
+        }
+        const isDirectUrl = /^https?:\/\//i.test(target) || /^pdf:https?:\/\//i.test(target);
+        if (isDirectUrl || params.extract) {
+          const result = await smartExtract({
+            target,
+            provider: 'pdf',
+            maxChars: params.maxChars ? Number(params.maxChars) : 12000,
+            proxy: reqProxy,
+          });
+          sendJson(res, result.ok ? 200 : 502, result);
+          return;
+        }
+        const result = await searchPdf(target, {
+          n: (params.n ?? params.limit) ? Number(params.n ?? params.limit) : 10,
+          proxy: reqProxy,
+          site: params.site,
+          timeRange: (params.timeRange ?? params.when) as SearchTimeRange | undefined,
+        });
+        sendJson(res, 200, result);
         return;
       }
 
@@ -241,6 +323,7 @@ export async function startServer(options: ServerOptions = {}): Promise<http.Ser
             count: params.n ? Number(params.n) : 5,
             safe,
             engine: params.engine,
+            proxy: reqProxy,
           });
           sendJson(res, 200, dlRes);
           return;
@@ -253,6 +336,7 @@ export async function startServer(options: ServerOptions = {}): Promise<http.Ser
           engine: params.engine,
           noCache: Boolean(params.noCache),
           verifyUrls: params.verifyUrls !== undefined ? Boolean(params.verifyUrls) : true,
+          proxy: reqProxy,
         });
 
         if (result.images.length || result.no_results) {
@@ -281,6 +365,7 @@ export async function startServer(options: ServerOptions = {}): Promise<http.Ser
           engine: params.engine,
           concurrency: params.concurrency,
           filenamePrefix: params.filenamePrefix,
+          proxy: reqProxy,
         });
         sendJson(res, 200, result);
         return;
@@ -299,6 +384,7 @@ export async function startServer(options: ServerOptions = {}): Promise<http.Ser
               params.autoPuppeteer !== undefined ? Boolean(params.autoPuppeteer) : true,
             forcePuppeteer: Boolean(params.forcePuppeteer),
             concurrency: params.concurrency ? Number(params.concurrency) : undefined,
+            proxy: reqProxy,
           });
           sendJson(res, 200, { count: batch.length, results: batch });
           return;
@@ -320,6 +406,7 @@ export async function startServer(options: ServerOptions = {}): Promise<http.Ser
             params.autoPuppeteer !== undefined ? Boolean(params.autoPuppeteer) : true,
           forcePuppeteer: Boolean(params.forcePuppeteer),
           timeoutMs: params.timeoutMs ? Number(params.timeoutMs) : undefined,
+          proxy: reqProxy,
         });
         sendJson(res, page.ok ? 200 : 502, page);
         return;
@@ -351,6 +438,7 @@ export async function startServer(options: ServerOptions = {}): Promise<http.Ser
           evaluateScript: params.evaluateScript,
           screenshotPath: params.screenshotPath,
           fullPageScreenshot: Boolean(params.fullPageScreenshot),
+          proxy: reqProxy,
         });
         sendJson(res, 200, result);
         return;
@@ -377,6 +465,7 @@ export async function startServer(options: ServerOptions = {}): Promise<http.Ser
           subLang: params.subLang,
           cookiesFile: params.cookiesFile,
           filenamePrefix: params.filenamePrefix,
+          proxy: reqProxy,
         });
         sendJson(res, result.ok ? 200 : 502, result);
         return;
@@ -400,6 +489,11 @@ export async function startServer(options: ServerOptions = {}): Promise<http.Ser
             params.autoPuppeteer !== undefined ? Boolean(params.autoPuppeteer) : true,
           includeImages: Boolean(params.includeImages),
           includeYoutube: Boolean(params.includeYoutube),
+          includePdf: Boolean(params.includePdf ?? params.pdf),
+          searchType: (params.searchType ?? params.type) as SearchVertical | undefined,
+          site: params.site,
+          timeRange: (params.timeRange ?? params.when) as SearchTimeRange | undefined,
+          proxy: reqProxy,
         });
         sendJson(res, 200, result);
         return;
@@ -419,6 +513,7 @@ export async function startServer(options: ServerOptions = {}): Promise<http.Ser
           limit: (params.limit ?? params.n) ? Number(params.limit ?? params.n) : undefined,
           sort: params.sort,
           language: params.language ?? params.lang,
+          proxy: reqProxy,
         });
         sendJson(res, result.ok ? 200 : 502, result);
         return;
@@ -432,6 +527,7 @@ export async function startServer(options: ServerOptions = {}): Promise<http.Ser
           when: params.when as NewsRecency,
           limit: (params.limit ?? params.n) ? Number(params.limit ?? params.n) : undefined,
           hnItemId: params.hnItemId ?? params.hn_item_id,
+          proxy: reqProxy,
         });
         sendJson(res, result.ok ? 200 : 502, result);
         return;
@@ -446,8 +542,10 @@ export async function startServer(options: ServerOptions = {}): Promise<http.Ser
         }
         const result = await smartExtract({
           target,
+          provider: params.provider as ExtractProvider | undefined,
           limit: (params.limit ?? params.n) ? Number(params.limit ?? params.n) : undefined,
           maxChars: params.maxChars ? Number(params.maxChars) : undefined,
+          proxy: reqProxy,
         });
         sendJson(res, result.ok ? 200 : 502, result);
         return;

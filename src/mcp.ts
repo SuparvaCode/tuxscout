@@ -10,7 +10,11 @@
 //   - deep_research
 
 import readline from 'node:readline';
-import { webSearch } from './tools/web-search.js';
+import {
+  webSearch,
+  type SearchTimeRange,
+  type SearchVertical,
+} from './tools/web-search.js';
 import { downloadImages, imageSearch, type SafeSearch } from './tools/image-search.js';
 import { fetchMarkdown } from './tools/markdown-fetch.js';
 import { fetchWithPuppeteer } from './tools/puppeteer-fetch.js';
@@ -18,13 +22,19 @@ import { youtubeTool, type YtMode, type YtVideoType, extractVideoId } from './to
 import { deepResearch, type ResearchDepth } from './tools/deep-research.js';
 import { socialIntel, type SocialPlatform, type SocialAction } from './tools/social-intel.js';
 import { newsIntel, type NewsCategory, type NewsRecency } from './tools/news-intel.js';
-import { smartExtract } from './tools/smart-extract.js';
+import { smartExtract, type ExtractProvider } from './tools/smart-extract.js';
+
+const PROXY_SCHEMA_PROP = {
+  type: 'string',
+  description:
+    'Optional HTTP/HTTPS/SOCKS5 proxy URL, host:port:user:pass, or comma-separated proxy rotation pool.',
+};
 
 export const MCP_TOOLS = [
   {
     name: 'web_search',
     description:
-      'Multi-engine resilient Internet Web Search (DuckDuckGo, Brave, Yahoo, Wikipedia) with 4-layer relevance scoring, landing-page rejection, and multi-query parallel execution.',
+      'Multi-engine resilient Internet Web Search (DuckDuckGo, Brave, Yahoo, Wikipedia, IMDb, ArXiv, OpenAlex) with 4-layer relevance scoring, advanced operators (PDF search, IMDb search, academic/code/docs verticals, site/filetype/intitle/inurl/time filters), and proxy support.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -37,8 +47,56 @@ export const MCP_TOOLS = [
         n: { type: 'number', description: 'Number of results to return (1-30, default 10).' },
         engine: {
           type: 'string',
-          description: 'Optional pin to specific engine: duckduckgo, duckduckgo-lite, brave, yahoo, bing, wikipedia.',
+          description:
+            'Optional pin to specific engine: duckduckgo, duckduckgo-lite, brave, yahoo, bing, wikipedia, imdb, arxiv, openalex.',
         },
+        searchType: {
+          type: 'string',
+          enum: ['general', 'pdf', 'imdb', 'academic', 'code', 'docs', 'books'],
+          description: 'Search vertical preset (e.g. "pdf" for PDFs, "imdb" for movies/TV/actors, "academic" for papers).',
+        },
+        site: {
+          type: 'string',
+          description: 'Restrict search to domain(s), e.g. "github.com" or "imdb.com".',
+        },
+        excludeSite: {
+          type: 'string',
+          description: 'Exclude domain(s) from results.',
+        },
+        filetype: {
+          type: 'string',
+          description: 'Filter by file extension, e.g. "pdf", "docx", "csv".',
+        },
+        pdfOnly: {
+          type: 'boolean',
+          description: 'Return only PDF documents (combines web filetype:pdf + ArXiv + OpenAlex PDFs).',
+        },
+        intitle: {
+          type: 'string',
+          description: 'Require term in the page title.',
+        },
+        inurl: {
+          type: 'string',
+          description: 'Require term in the page URL.',
+        },
+        exactPhrase: {
+          type: 'string',
+          description: 'Require exact phrase match.',
+        },
+        excludeTerms: {
+          type: 'string',
+          description: 'Exclude word or phrase from results.',
+        },
+        timeRange: {
+          type: 'string',
+          enum: ['day', 'week', 'month', 'year', 'any'],
+          description: 'Recency filter for search results.',
+        },
+        region: {
+          type: 'string',
+          description: 'Optional region code (e.g. "us-en", "uk-en", "in-en").',
+        },
+        proxy: PROXY_SCHEMA_PROP,
       },
     },
   },
@@ -64,6 +122,7 @@ export const MCP_TOOLS = [
           type: 'boolean',
           description: 'Probe image URLs in parallel to filter out dead/403/HTML links (default true).',
         },
+        proxy: PROXY_SCHEMA_PROP,
       },
       required: ['query'],
     },
@@ -84,6 +143,7 @@ export const MCP_TOOLS = [
         outputDir: { type: 'string', description: 'Directory path to save downloaded images.' },
         count: { type: 'number', description: 'Number of valid images to save (default 5).' },
         safe: { type: 'string', enum: ['off', 'moderate', 'strict'] },
+        proxy: PROXY_SCHEMA_PROP,
       },
       required: ['outputDir'],
     },
@@ -91,11 +151,11 @@ export const MCP_TOOLS = [
   {
     name: 'fetch_markdown',
     description:
-      'Fetch any website URL and convert its main article content into clean, LLM-ready Markdown. Automatically detects SPA/JS-walls and escalates to low-memory headless Chromium when needed.',
+      'Fetch any website or PDF/IMDb URL and convert its main content into clean, LLM-ready Markdown. Automatically extracts PDFs, IMDb titles, Social/API targets, and escalates to low-memory headless Chromium when needed.',
     inputSchema: {
       type: 'object',
       properties: {
-        url: { type: 'string', description: 'Website URL to fetch.' },
+        url: { type: 'string', description: 'Website, PDF, or IMDb URL to fetch.' },
         maxChars: { type: 'number', description: 'Max Markdown characters to return (0 = unlimited).' },
         includeLinks: { type: 'boolean', description: 'Preserve hyperlinks in Markdown (default true).' },
         includeImages: { type: 'boolean', description: 'Preserve image tags in Markdown (default false).' },
@@ -107,6 +167,7 @@ export const MCP_TOOLS = [
           type: 'boolean',
           description: 'Skip HTTP and render directly with low-RAM Puppeteer (default false).',
         },
+        proxy: PROXY_SCHEMA_PROP,
       },
       required: ['url'],
     },
@@ -129,6 +190,7 @@ export const MCP_TOOLS = [
         evaluateScript: { type: 'string', description: 'Optional JS expression to evaluate in page.' },
         screenshotPath: { type: 'string', description: 'Optional file path to save a PNG screenshot.' },
         maxChars: { type: 'number', description: 'Max Markdown characters to return.' },
+        proxy: PROXY_SCHEMA_PROP,
       },
       required: ['url'],
     },
@@ -168,6 +230,7 @@ export const MCP_TOOLS = [
         },
         searchLimit: { type: 'number', description: 'Number of results when mode="search" (default 5).' },
         subLang: { type: 'string', description: 'Subtitle language code for mode="transcript" (default "en").' },
+        proxy: PROXY_SCHEMA_PROP,
       },
       required: ['input'],
     },
@@ -175,7 +238,7 @@ export const MCP_TOOLS = [
   {
     name: 'deep_research',
     description:
-      'Multi-Parallel Stage Search & Deep Research tool. Expands query into multiple angles, searches multiple engines concurrently, fetches top diverse pages in parallel (HTTP -> Puppeteer JS fallback), ranks passages, and synthesizes a citation-backed Markdown research report.',
+      'Multi-Parallel Stage Search & Deep Research tool. Expands query into multiple angles, searches multiple engines concurrently, fetches top diverse pages & PDFs in parallel (HTTP -> Puppeteer JS fallback), ranks passages, and synthesizes a citation-backed Markdown research report.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -196,6 +259,22 @@ export const MCP_TOOLS = [
           type: 'boolean',
           description: 'Also search YouTube (long-form videos) and extract top video transcript.',
         },
+        includePdf: {
+          type: 'boolean',
+          description: 'Also run dedicated PDF search (ArXiv/OpenAlex/web PDFs) and extract PDF text.',
+        },
+        searchType: {
+          type: 'string',
+          enum: ['general', 'pdf', 'imdb', 'academic', 'code', 'docs', 'books'],
+          description: 'Optional search vertical filter.',
+        },
+        site: { type: 'string', description: 'Optional domain restriction.' },
+        timeRange: {
+          type: 'string',
+          enum: ['day', 'week', 'month', 'year', 'any'],
+          description: 'Optional recency filter.',
+        },
+        proxy: PROXY_SCHEMA_PROP,
       },
       required: ['query'],
     },
@@ -234,6 +313,7 @@ export const MCP_TOOLS = [
           type: 'string',
           description: 'Optional programming language filter when action="trending" on GitHub.',
         },
+        proxy: PROXY_SCHEMA_PROP,
       },
       required: ['target'],
     },
@@ -267,20 +347,38 @@ export const MCP_TOOLS = [
           type: 'string',
           description: 'Optional Hacker News story ID to fetch its full nested comment discussion.',
         },
+        proxy: PROXY_SCHEMA_PROP,
       },
     },
   },
   {
     name: 'smart_extract',
     description:
-      'Zero-Browser Structured Knowledge Extractor & Router. Turns any URL or shorthand target (Twitter/X, Instagram, Reddit, GitHub, YouTube, HackerNews, StackOverflow, ArXiv, Wikipedia, NPM, PyPI, TikTok, or any generic webpage with JSON-LD/NextData/Tables) into concise structured JSON + Markdown without opening a browser window.',
+      'Zero-Browser Structured Knowledge Extractor & Router. Turns any URL or shorthand target (IMDb movies/TV/actors, PDF documents, Twitter/X, Instagram, Reddit, GitHub, YouTube, HackerNews, StackOverflow, ArXiv, Wikipedia, NPM, PyPI, TikTok, or any generic webpage) into concise structured JSON + Markdown without opening a browser window.',
     inputSchema: {
       type: 'object',
       properties: {
         target: {
           type: 'string',
           description:
-            'Any URL or prefixed query (e.g. "https://x.com/...", "ig:nasa", "npm:tuxscout", "pypi:fastapi", "arxiv:2401.00001", "so:node fetch timeout", "wiki:Linux", or any website URL).',
+            'Any URL or prefixed query (e.g. "imdb:Inception", "tt1375666", "pdf:https://arxiv.org/pdf/1706.03762.pdf", "https://x.com/...", "ig:nasa", "npm:tuxscout", "pypi:fastapi", "arxiv:2401.00001", "so:node fetch timeout", "wiki:Linux", or any website URL).',
+        },
+        provider: {
+          type: 'string',
+          enum: [
+            'imdb',
+            'pdf',
+            'stackoverflow',
+            'arxiv',
+            'wikipedia',
+            'npm',
+            'pypi',
+            'social',
+            'news',
+            'youtube',
+            'webpage',
+          ],
+          description: 'Optional explicit extractor provider (auto-detected if omitted).',
         },
         limit: {
           type: 'number',
@@ -288,8 +386,9 @@ export const MCP_TOOLS = [
         },
         maxChars: {
           type: 'number',
-          description: 'Max Markdown characters for generic webpages (default 6000).',
+          description: 'Max Markdown characters for generic webpages or PDFs (default 6000).',
         },
+        proxy: PROXY_SCHEMA_PROP,
       },
       required: ['target'],
     },
@@ -319,6 +418,18 @@ async function handleToolCall(name: string, args: Record<string, any>): Promise<
         queries: args.queries,
         n: args.n ?? args.count ?? args.limit ?? args.max_results,
         engine: args.engine,
+        searchType: (args.searchType ?? args.search_type ?? args.type) as SearchVertical | undefined,
+        site: args.site,
+        excludeSite: args.excludeSite ?? args.exclude_site,
+        filetype: args.filetype ?? args.ext,
+        pdfOnly: args.pdfOnly ?? args.pdf_only ?? args.pdf,
+        intitle: args.intitle,
+        inurl: args.inurl,
+        exactPhrase: args.exactPhrase ?? args.exact_phrase ?? args.exact,
+        excludeTerms: args.excludeTerms ?? args.exclude_terms ?? args.exclude,
+        timeRange: (args.timeRange ?? args.time_range ?? args.when) as SearchTimeRange | undefined,
+        region: args.region,
+        proxy: args.proxy,
       });
 
     case 'image_search':
@@ -328,6 +439,7 @@ async function handleToolCall(name: string, args: Record<string, any>): Promise<
         safe: (args.safe as SafeSearch) || 'moderate',
         engine: args.engine,
         verifyUrls: args.verifyUrls !== undefined ? Boolean(args.verifyUrls) : true,
+        proxy: args.proxy,
       });
 
     case 'image_download':
@@ -337,6 +449,7 @@ async function handleToolCall(name: string, args: Record<string, any>): Promise<
         outputDir: args.outputDir ?? args.output_dir ?? args.dir ?? './downloads/images',
         count: args.count ?? args.n ?? args.limit,
         safe: args.safe as SafeSearch,
+        proxy: args.proxy,
       });
 
     case 'fetch_markdown':
@@ -347,6 +460,7 @@ async function handleToolCall(name: string, args: Record<string, any>): Promise<
         includeImages: args.includeImages,
         autoPuppeteer: args.autoPuppeteer,
         forcePuppeteer: args.forcePuppeteer,
+        proxy: args.proxy,
       });
 
     case 'fetch_puppeteer_js':
@@ -358,6 +472,7 @@ async function handleToolCall(name: string, args: Record<string, any>): Promise<
         evaluateScript: args.evaluateScript,
         screenshotPath: args.screenshotPath,
         maxChars: args.maxChars ?? args.max_chars,
+        proxy: args.proxy,
       });
 
     case 'youtube_tool': {
@@ -374,6 +489,7 @@ async function handleToolCall(name: string, args: Record<string, any>): Promise<
         maxHeight: args.maxHeight ?? args.height,
         searchLimit: args.searchLimit ?? args.n ?? args.limit ?? args.count,
         subLang: args.subLang ?? args.lang,
+        proxy: args.proxy,
       });
     }
 
@@ -385,6 +501,11 @@ async function handleToolCall(name: string, args: Record<string, any>): Promise<
         maxPages: args.maxPages ?? args.max_pages,
         includeImages: args.includeImages ?? args.include_images,
         includeYoutube: args.includeYoutube ?? args.include_youtube,
+        includePdf: args.includePdf ?? args.include_pdf,
+        searchType: (args.searchType ?? args.search_type) as SearchVertical | undefined,
+        site: args.site,
+        timeRange: (args.timeRange ?? args.time_range) as SearchTimeRange | undefined,
+        proxy: args.proxy,
       });
 
     case 'social_intel':
@@ -395,6 +516,7 @@ async function handleToolCall(name: string, args: Record<string, any>): Promise<
         limit: args.limit ?? args.n ?? args.count,
         sort: args.sort,
         language: args.language ?? args.lang,
+        proxy: args.proxy,
       });
 
     case 'news_intel':
@@ -404,13 +526,16 @@ async function handleToolCall(name: string, args: Record<string, any>): Promise<
         when: args.when as NewsRecency,
         limit: args.limit ?? args.n ?? args.count,
         hnItemId: args.hnItemId ?? args.hn_item_id,
+        proxy: args.proxy,
       });
 
     case 'smart_extract':
       return await smartExtract({
         target: String(args.target ?? args.url ?? args.query ?? args.q ?? ''),
+        provider: args.provider as ExtractProvider | undefined,
         limit: args.limit ?? args.n ?? args.count,
         maxChars: args.maxChars ?? args.max_chars,
+        proxy: args.proxy,
       });
 
     default:
@@ -447,7 +572,7 @@ export function startMcpServer(): void {
           },
           serverInfo: {
             name: 'tuxscout',
-            version: '1.1.1',
+            version: '1.2.0',
           },
         });
         return;

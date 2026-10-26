@@ -1,3 +1,4 @@
+import { type ProxyInput } from '../utils/http.js';
 import type { SearchAttempt } from './web-search.js';
 export interface ImageItem {
     title: string;
@@ -22,6 +23,8 @@ export interface ImageSearchOptions {
     verifyUrls?: boolean;
     noCache?: boolean;
     timeoutMs?: number;
+    /** Optional HTTP/HTTPS/SOCKS5 proxy URL or proxy list for rotation */
+    proxy?: ProxyInput;
 }
 export interface ImageSearchResult {
     total: number;
@@ -57,6 +60,8 @@ export interface ImageDownloadOptions {
     allowThumbFallback?: boolean;
     saveManifest?: boolean;
     filenamePrefix?: string;
+    /** Optional HTTP/HTTPS/SOCKS5 proxy URL or proxy list for rotation */
+    proxy?: ProxyInput;
 }
 export interface ImageDownloadResult {
     outputDir: string;

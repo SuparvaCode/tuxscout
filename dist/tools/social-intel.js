@@ -6,7 +6,7 @@
 //   - Reddit      : Subreddit Feed (hot/new/top), Post + Nested Comments, User Profile, Search
 //   - GitHub      : Repository Overview + README, Issue/PR Thread, User Profile, Trending Repos
 //   - TikTok      : Video & Creator Metadata via oEmbed + Crawler Meta
-import { BROWSER_HEADERS, clean, fetchTextWithJar, hasCookies, LruCache, } from '../utils/http.js';
+import { BROWSER_HEADERS, clean, fetchTextWithJar, hasCookies, LruCache, proxyFetch, } from '../utils/http.js';
 import { attr, decodeEntities, extractPageMetadata, textOnly } from '../utils/html.js';
 import { webSearch } from './web-search.js';
 const cache = new LruCache(200, 5 * 60_000);
@@ -113,7 +113,7 @@ function mapFxTweet(t) {
             : undefined,
     };
 }
-export async function fetchTwitterTweet(tweetIdOrUrl, userHint = 'i') {
+export async function fetchTwitterTweet(tweetIdOrUrl, userHint = 'i', proxy) {
     let id = tweetIdOrUrl.trim();
     let user = userHint;
     const m = /(?:twitter\.com|x\.com)\/([^/?#]+)\/status\/(\d+)/i.exec(id);
@@ -130,9 +130,10 @@ export async function fetchTwitterTweet(tweetIdOrUrl, userHint = 'i') {
         return null;
     // Primary: FxTwitter API
     try {
-        const res = await fetch(`https://api.fxtwitter.com/${user}/status/${id}`, {
+        const res = await proxyFetch(`https://api.fxtwitter.com/${user}/status/${id}`, {
             headers: { 'User-Agent': 'TuxScout/1.1 (+https://github.com/SuparvaCode/tuxscout)' },
             signal: AbortSignal.timeout(6_000),
+            proxy,
         });
         if (res.ok) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -147,9 +148,10 @@ export async function fetchTwitterTweet(tweetIdOrUrl, userHint = 'i') {
     }
     // Fallback 1: VxTwitter API
     try {
-        const res = await fetch(`https://api.vxtwitter.com/${user}/status/${id}`, {
+        const res = await proxyFetch(`https://api.vxtwitter.com/${user}/status/${id}`, {
             headers: { 'User-Agent': 'TuxScout/1.1' },
             signal: AbortSignal.timeout(6_000),
+            proxy,
         });
         if (res.ok) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -190,9 +192,10 @@ export async function fetchTwitterTweet(tweetIdOrUrl, userHint = 'i') {
     }
     // Fallback 2: Official Twitter Syndication API
     try {
-        const res = await fetch(`https://cdn.syndication.twimg.com/tweet-result?id=${id}&token=x`, {
+        const res = await proxyFetch(`https://cdn.syndication.twimg.com/tweet-result?id=${id}&token=x`, {
             headers: { 'User-Agent': BROWSER_HEADERS['User-Agent'] },
             signal: AbortSignal.timeout(6_000),
+            proxy,
         });
         if (res.ok) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -231,7 +234,7 @@ export async function fetchTwitterTweet(tweetIdOrUrl, userHint = 'i') {
     }
     return null;
 }
-export async function fetchTwitterProfile(usernameOrUrl, limit = 6) {
+export async function fetchTwitterProfile(usernameOrUrl, limit = 6, proxy) {
     let username = usernameOrUrl
         .trim()
         .replace(/^@/, '')
@@ -242,9 +245,10 @@ export async function fetchTwitterProfile(usernameOrUrl, limit = 6) {
     let profile = null;
     // 1. Fetch profile metadata from FxTwitter
     try {
-        const res = await fetch(`https://api.fxtwitter.com/${encodeURIComponent(username)}`, {
+        const res = await proxyFetch(`https://api.fxtwitter.com/${encodeURIComponent(username)}`, {
             headers: { 'User-Agent': 'TuxScout/1.1 (+https://github.com/SuparvaCode/tuxscout)' },
             signal: AbortSignal.timeout(6_000),
+            proxy,
         });
         if (res.ok) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -278,9 +282,10 @@ export async function fetchTwitterProfile(usernameOrUrl, limit = 6) {
     // Fallback to VxTwitter profile
     if (!profile) {
         try {
-            const res = await fetch(`https://api.vxtwitter.com/${encodeURIComponent(username)}`, {
+            const res = await proxyFetch(`https://api.vxtwitter.com/${encodeURIComponent(username)}`, {
                 headers: { 'User-Agent': 'TuxScout/1.1' },
                 signal: AbortSignal.timeout(6_000),
+                proxy,
             });
             if (res.ok) {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -317,6 +322,7 @@ export async function fetchTwitterProfile(usernameOrUrl, limit = 6) {
                     `"x.com/${username}/status"`,
                 ],
                 n: Math.min(20, limit * 3),
+                proxy,
             });
             const seenIds = new Set();
             const candidates = [];
@@ -339,7 +345,7 @@ export async function fetchTwitterProfile(usernameOrUrl, limit = 6) {
                 }
             });
             const topCandidates = candidates.slice(0, limit);
-            const hydrated = await Promise.all(topCandidates.map((c) => fetchTwitterTweet(c.id, c.user)));
+            const hydrated = await Promise.all(topCandidates.map((c) => fetchTwitterTweet(c.id, c.user, proxy)));
             const validTweets = hydrated.filter((t) => Boolean(t));
             if (profile) {
                 profile.recentTweets = validTweets;
@@ -365,13 +371,14 @@ export async function fetchTwitterProfile(usernameOrUrl, limit = 6) {
     }
     return profile;
 }
-export async function searchTwitterTweets(query, limit = 8) {
+export async function searchTwitterTweets(query, limit = 8, proxy) {
     const searchRes = await webSearch({
         queries: [
             `(site:x.com OR site:twitter.com) "status" ${query}`,
             `site:x.com/*/status ${query}`,
         ],
         n: Math.min(25, limit * 3),
+        proxy,
     });
     const seenIds = new Set();
     const candidates = [];
@@ -382,11 +389,11 @@ export async function searchTwitterTweets(query, limit = 8) {
             candidates.push({ user: m[1], id: m[2] });
         }
     }
-    const hydrated = await Promise.all(candidates.slice(0, limit + 3).map((c) => fetchTwitterTweet(c.id, c.user)));
+    const hydrated = await Promise.all(candidates.slice(0, limit + 3).map((c) => fetchTwitterTweet(c.id, c.user, proxy)));
     return hydrated.filter((t) => Boolean(t)).slice(0, limit);
 }
 // ── 2. INSTAGRAM SCRAPER (Zero-Browser Profile + Post/Reel Inspector) ──────
-export async function fetchInstagramPost(urlOrShortcode) {
+export async function fetchInstagramPost(urlOrShortcode, proxy) {
     let shortcode = urlOrShortcode.trim();
     let type = 'post';
     const m = /instagram\.com\/(?:[^/?#]+\/)?(p|reel|tv)\/([A-Za-z0-9_-]+)/i.exec(shortcode);
@@ -401,12 +408,13 @@ export async function fetchInstagramPost(urlOrShortcode) {
         return null;
     const targetUrl = `https://www.instagram.com/p/${shortcode}/`;
     try {
-        const res = await fetch(targetUrl, {
+        const res = await proxyFetch(targetUrl, {
             headers: {
                 'User-Agent': CRAWLER_UA,
                 Accept: 'text/html,application/xhtml+xml',
             },
             signal: AbortSignal.timeout(7_000),
+            proxy,
         });
         if (!res.ok)
             return null;
@@ -493,7 +501,7 @@ export async function fetchInstagramPost(urlOrShortcode) {
         return null;
     }
 }
-export async function fetchInstagramProfile(usernameOrUrl, limit = 6) {
+export async function fetchInstagramProfile(usernameOrUrl, limit = 6, proxy) {
     const username = usernameOrUrl
         .trim()
         .replace(/^@/, '')
@@ -510,12 +518,13 @@ export async function fetchInstagramProfile(usernameOrUrl, limit = 6) {
     let postsRaw = '0';
     let avatarUrl;
     try {
-        const res = await fetch(profileUrl, {
+        const res = await proxyFetch(profileUrl, {
             headers: {
                 'User-Agent': CRAWLER_UA,
                 Accept: 'text/html,application/xhtml+xml',
             },
             signal: AbortSignal.timeout(7_000),
+            proxy,
         });
         if (res.ok) {
             const html = await res.text();
@@ -555,6 +564,7 @@ export async function fetchInstagramProfile(usernameOrUrl, limit = 6) {
                     `site:instagram.com/reel/ "@${username}"`,
                 ],
                 n: Math.min(24, limit * 3),
+                proxy,
             });
             const seenCodes = new Set();
             const codes = [];
@@ -565,7 +575,7 @@ export async function fetchInstagramProfile(usernameOrUrl, limit = 6) {
                     codes.push(m[1]);
                 }
             }
-            const hydrated = await Promise.all(codes.slice(0, limit + 6).map((code) => fetchInstagramPost(code)));
+            const hydrated = await Promise.all(codes.slice(0, limit + 6).map((code) => fetchInstagramPost(code, proxy)));
             for (const post of hydrated) {
                 if (!post)
                     continue;
@@ -608,12 +618,13 @@ export async function fetchInstagramProfile(usernameOrUrl, limit = 6) {
         recentPosts,
     };
 }
-export async function searchInstagramPosts(query, limit = 6) {
+export async function searchInstagramPosts(query, limit = 6, proxy) {
     const searchRes = await webSearch({
         queries: [
             `(site:instagram.com/p/ OR site:instagram.com/reel/) ${query}`,
         ],
         n: Math.min(20, limit * 3),
+        proxy,
     });
     const seenCodes = new Set();
     const codes = [];
@@ -624,19 +635,19 @@ export async function searchInstagramPosts(query, limit = 6) {
             codes.push(m[1]);
         }
     }
-    const hydrated = await Promise.all(codes.slice(0, limit + 4).map((c) => fetchInstagramPost(c)));
+    const hydrated = await Promise.all(codes.slice(0, limit + 4).map((c) => fetchInstagramPost(c, proxy)));
     return hydrated.filter((p) => Boolean(p)).slice(0, limit);
 }
 // ── 3. REDDIT SCRAPER (Cookie-Bootstrapped Atom RSS for Subreddits, Posts & Comments) ──
-async function fetchRedditRss(rssUrl) {
+async function fetchRedditRss(rssUrl, proxy) {
     const deadline = Date.now() + 9_000;
     if (!hasCookies('reddit_jar')) {
-        await fetchTextWithJar('reddit_jar', 'https://old.reddit.com/', deadline, BROWSER_HEADERS).catch(() => { });
+        await fetchTextWithJar('reddit_jar', 'https://old.reddit.com/', deadline, BROWSER_HEADERS, undefined, proxy).catch(() => { });
     }
     const res = await fetchTextWithJar('reddit_jar', rssUrl, deadline, {
         'User-Agent': REDDIT_RSS_UA,
         Accept: 'application/atom+xml,application/rss+xml,application/xml,text/xml',
-    });
+    }, undefined, proxy);
     return res.text;
 }
 function parseRedditAtomEntries(xml) {
@@ -666,7 +677,7 @@ function parseRedditAtomEntries(xml) {
         };
     });
 }
-export async function fetchRedditSubreddit(subredditInput, sort = 'hot', limit = 10) {
+export async function fetchRedditSubreddit(subredditInput, sort = 'hot', limit = 10, proxy) {
     const sub = subredditInput
         .trim()
         .replace(/^\/?r\//i, '')
@@ -676,7 +687,7 @@ export async function fetchRedditSubreddit(subredditInput, sort = 'hot', limit =
         ? sort.toLowerCase()
         : 'hot';
     const rssUrl = `https://www.reddit.com/r/${encodeURIComponent(sub)}/${validSort}/.rss?limit=${Math.min(50, limit)}`;
-    const xml = await fetchRedditRss(rssUrl);
+    const xml = await fetchRedditRss(rssUrl, proxy);
     const parsed = parseRedditAtomEntries(xml);
     return parsed.slice(0, limit).map((p) => ({
         id: p.id,
@@ -689,10 +700,10 @@ export async function fetchRedditSubreddit(subredditInput, sort = 'hot', limit =
         bodyText: p.contentText.slice(0, 1200),
     }));
 }
-export async function fetchRedditPostWithComments(postUrl, limit = 12) {
+export async function fetchRedditPostWithComments(postUrl, limit = 12, proxy) {
     const cleanUrl = postUrl.split('?')[0].replace(/\/+$/, '');
     const rssUrl = `${cleanUrl}/.rss?limit=${Math.min(50, limit + 2)}`;
-    const xml = await fetchRedditRss(rssUrl);
+    const xml = await fetchRedditRss(rssUrl, proxy);
     const parsed = parseRedditAtomEntries(xml);
     if (!parsed.length)
         return { post: null, comments: [] };
@@ -715,9 +726,9 @@ export async function fetchRedditPostWithComments(postUrl, limit = 12) {
     }));
     return { post, comments };
 }
-export async function searchReddit(query, limit = 10) {
+export async function searchReddit(query, limit = 10, proxy) {
     const rssUrl = `https://www.reddit.com/search.rss?q=${encodeURIComponent(query)}&sort=relevance&t=year&limit=${Math.min(50, limit)}`;
-    const xml = await fetchRedditRss(rssUrl);
+    const xml = await fetchRedditRss(rssUrl, proxy);
     const parsed = parseRedditAtomEntries(xml);
     return parsed.slice(0, limit).map((p) => ({
         id: p.id,
@@ -735,7 +746,7 @@ const GITHUB_API_HEADERS = {
     'User-Agent': 'TuxScout/1.1 (+https://github.com/SuparvaCode/tuxscout)',
     Accept: 'application/vnd.github+json',
 };
-export async function fetchGithubRepo(repoOrUrl) {
+export async function fetchGithubRepo(repoOrUrl, proxy) {
     const cleanPath = repoOrUrl
         .trim()
         .replace(/^https?:\/\/(?:www\.)?github\.com\//i, '')
@@ -746,17 +757,20 @@ export async function fetchGithubRepo(repoOrUrl) {
     if (!owner || !repo)
         throw new Error(`Invalid GitHub repository: ${repoOrUrl}`);
     const [repoRes, releasesRes, readmeRes] = await Promise.all([
-        fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+        proxyFetch(`https://api.github.com/repos/${owner}/${repo}`, {
             headers: GITHUB_API_HEADERS,
             signal: AbortSignal.timeout(7_000),
+            proxy,
         }),
-        fetch(`https://api.github.com/repos/${owner}/${repo}/releases?per_page=3`, {
+        proxyFetch(`https://api.github.com/repos/${owner}/${repo}/releases?per_page=3`, {
             headers: GITHUB_API_HEADERS,
             signal: AbortSignal.timeout(7_000),
+            proxy,
         }),
-        fetch(`https://api.github.com/repos/${owner}/${repo}/readme`, {
+        proxyFetch(`https://api.github.com/repos/${owner}/${repo}/readme`, {
             headers: { ...GITHUB_API_HEADERS, Accept: 'application/vnd.github.raw+json' },
             signal: AbortSignal.timeout(7_000),
+            proxy,
         }),
     ]);
     if (!repoRes.ok) {
@@ -794,7 +808,7 @@ export async function fetchGithubRepo(repoOrUrl) {
         readmeExcerpt: readmeRaw.slice(0, 3500),
     };
 }
-export async function fetchGithubIssueOrPr(issueUrlOrPath, limit = 10) {
+export async function fetchGithubIssueOrPr(issueUrlOrPath, limit = 10, proxy) {
     const cleanPath = issueUrlOrPath
         .trim()
         .replace(/^https?:\/\/(?:www\.)?github\.com\//i, '')
@@ -805,13 +819,15 @@ export async function fetchGithubIssueOrPr(issueUrlOrPath, limit = 10) {
         throw new Error(`Invalid GitHub Issue/PR URL: ${issueUrlOrPath}`);
     const [, owner, repo, kind, num] = m;
     const [itemRes, commentsRes] = await Promise.all([
-        fetch(`https://api.github.com/repos/${owner}/${repo}/issues/${num}`, {
+        proxyFetch(`https://api.github.com/repos/${owner}/${repo}/issues/${num}`, {
             headers: GITHUB_API_HEADERS,
             signal: AbortSignal.timeout(7_000),
+            proxy,
         }),
-        fetch(`https://api.github.com/repos/${owner}/${repo}/issues/${num}/comments?per_page=${Math.min(30, limit)}`, {
+        proxyFetch(`https://api.github.com/repos/${owner}/${repo}/issues/${num}/comments?per_page=${Math.min(30, limit)}`, {
             headers: GITHUB_API_HEADERS,
             signal: AbortSignal.timeout(7_000),
+            proxy,
         }),
     ]);
     if (!itemRes.ok) {
@@ -844,15 +860,16 @@ export async function fetchGithubIssueOrPr(issueUrlOrPath, limit = 10) {
             : [],
     };
 }
-export async function fetchGithubTrending(language = '', since = 'daily', limit = 10) {
+export async function fetchGithubTrending(language = '', since = 'daily', limit = 10, proxy) {
     const validSince = ['daily', 'weekly', 'monthly'].includes(since.toLowerCase())
         ? since.toLowerCase()
         : 'daily';
     const langSegment = language ? `/${encodeURIComponent(language.toLowerCase())}` : '';
     const url = `https://github.com/trending${langSegment}?since=${validSince}`;
-    const res = await fetch(url, {
+    const res = await proxyFetch(url, {
         headers: BROWSER_HEADERS,
         signal: AbortSignal.timeout(8_000),
+        proxy,
     });
     const html = await res.text();
     const rows = [...html.matchAll(/<article\s+class="Box-row"[^>]*>([\s\S]*?)<\/article>/gi)].map((m) => m[1]);
@@ -876,11 +893,12 @@ export async function fetchGithubTrending(language = '', since = 'daily', limit 
     });
 }
 // ── 5. TIKTOK SCRAPER (Zero-Browser oEmbed + Metadata) ─────────────────────
-export async function fetchTiktokInfo(url) {
+export async function fetchTiktokInfo(url, proxy) {
     const oembedUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`;
-    const res = await fetch(oembedUrl, {
+    const res = await proxyFetch(oembedUrl, {
         headers: { 'User-Agent': BROWSER_HEADERS['User-Agent'] },
         signal: AbortSignal.timeout(7_000),
+        proxy,
     });
     if (res.ok) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -895,9 +913,10 @@ export async function fetchTiktokInfo(url) {
             provider: 'TikTok',
         };
     }
-    const pageRes = await fetch(url, {
+    const pageRes = await proxyFetch(url, {
         headers: { 'User-Agent': CRAWLER_UA },
         signal: AbortSignal.timeout(7_000),
+        proxy,
     });
     const html = await pageRes.text();
     const meta = extractPageMetadata(html, url);
@@ -1041,14 +1060,14 @@ export async function socialIntel(options) {
         let markdown = '';
         if (platform === 'twitter') {
             if (action === 'post') {
-                const tweet = await fetchTwitterTweet(rawTarget);
+                const tweet = await fetchTwitterTweet(rawTarget, 'i', options.proxy);
                 if (!tweet)
                     throw new Error(`Tweet not found or unavailable: ${rawTarget}`);
                 data = tweet;
                 markdown = `# X / Twitter Post\n\n${formatTweetMd(tweet)}`;
             }
             else if (action === 'profile') {
-                const prof = await fetchTwitterProfile(rawTarget, limit);
+                const prof = await fetchTwitterProfile(rawTarget, limit, options.proxy);
                 if (!prof)
                     throw new Error(`Twitter profile not found: ${rawTarget}`);
                 data = prof;
@@ -1073,7 +1092,7 @@ export async function socialIntel(options) {
                 markdown = lines.join('\n');
             }
             else {
-                const tweets = await searchTwitterTweets(rawTarget, limit);
+                const tweets = await searchTwitterTweets(rawTarget, limit, options.proxy);
                 data = { query: rawTarget, count: tweets.length, tweets };
                 const lines = [`# X / Twitter Search: "${rawTarget}" (${tweets.length} tweets)\n`];
                 tweets.forEach((t, i) => lines.push(formatTweetMd(t, i), ''));
@@ -1082,14 +1101,14 @@ export async function socialIntel(options) {
         }
         else if (platform === 'instagram') {
             if (action === 'post') {
-                const post = await fetchInstagramPost(rawTarget);
+                const post = await fetchInstagramPost(rawTarget, options.proxy);
                 if (!post)
                     throw new Error(`Instagram post/reel not found: ${rawTarget}`);
                 data = post;
                 markdown = `# Instagram ${post.type.toUpperCase()}\n\n${formatInstagramPostMd(post)}`;
             }
             else if (action === 'profile') {
-                const prof = await fetchInstagramProfile(rawTarget, limit);
+                const prof = await fetchInstagramProfile(rawTarget, limit, options.proxy);
                 if (!prof)
                     throw new Error(`Instagram profile not found: ${rawTarget}`);
                 data = prof;
@@ -1108,7 +1127,7 @@ export async function socialIntel(options) {
                 markdown = lines.join('\n');
             }
             else {
-                const posts = await searchInstagramPosts(rawTarget, limit);
+                const posts = await searchInstagramPosts(rawTarget, limit, options.proxy);
                 data = { query: rawTarget, count: posts.length, posts };
                 const lines = [`# Instagram Search: "${rawTarget}" (${posts.length} posts/reels)\n`];
                 posts.forEach((p, i) => lines.push(formatInstagramPostMd(p, i), ''));
@@ -1117,7 +1136,7 @@ export async function socialIntel(options) {
         }
         else if (platform === 'reddit') {
             if (action === 'post') {
-                const res = await fetchRedditPostWithComments(rawTarget, limit);
+                const res = await fetchRedditPostWithComments(rawTarget, limit, options.proxy);
                 if (!res.post)
                     throw new Error(`Reddit post not found: ${rawTarget}`);
                 data = res;
@@ -1137,7 +1156,7 @@ export async function socialIntel(options) {
                 markdown = lines.join('\n');
             }
             else if (action === 'feed') {
-                const posts = await fetchRedditSubreddit(rawTarget, options.sort || 'hot', limit);
+                const posts = await fetchRedditSubreddit(rawTarget, options.sort || 'hot', limit, options.proxy);
                 data = { subreddit: rawTarget, sort: options.sort || 'hot', posts };
                 const lines = [`# Reddit Subreddit Feed: ${rawTarget} (${posts.length} posts)\n`];
                 posts.forEach((p, i) => {
@@ -1146,7 +1165,7 @@ export async function socialIntel(options) {
                 markdown = lines.join('\n');
             }
             else {
-                const posts = await searchReddit(rawTarget, limit);
+                const posts = await searchReddit(rawTarget, limit, options.proxy);
                 data = { query: rawTarget, posts };
                 const lines = [`# Reddit Search: "${rawTarget}" (${posts.length} threads)\n`];
                 posts.forEach((p, i) => {
@@ -1157,7 +1176,7 @@ export async function socialIntel(options) {
         }
         else if (platform === 'github') {
             if (action === 'trending') {
-                const repos = await fetchGithubTrending(options.language || '', options.sort || 'daily', limit);
+                const repos = await fetchGithubTrending(options.language || '', options.sort || 'daily', limit, options.proxy);
                 data = { language: options.language || 'all', since: options.sort || 'daily', repos };
                 const lines = [
                     `# GitHub Trending Repositories (${options.language || 'All Languages'}, ${options.sort || 'daily'})\n`,
@@ -1168,7 +1187,7 @@ export async function socialIntel(options) {
                 markdown = lines.join('\n');
             }
             else if (action === 'issue') {
-                const issue = await fetchGithubIssueOrPr(rawTarget, limit);
+                const issue = await fetchGithubIssueOrPr(rawTarget, limit, options.proxy);
                 data = issue;
                 const lines = [
                     `# GitHub ${issue.type === 'pull_request' ? 'PR' : 'Issue'} #${issue.number}: ${issue.title}`,
@@ -1186,7 +1205,7 @@ export async function socialIntel(options) {
                 markdown = lines.join('\n');
             }
             else {
-                const repo = await fetchGithubRepo(rawTarget);
+                const repo = await fetchGithubRepo(rawTarget, options.proxy);
                 data = repo;
                 const lines = [
                     `# GitHub Repo: ${repo.fullName}`,
@@ -1206,7 +1225,7 @@ export async function socialIntel(options) {
             }
         }
         else if (platform === 'tiktok') {
-            const tk = await fetchTiktokInfo(rawTarget);
+            const tk = await fetchTiktokInfo(rawTarget, options.proxy);
             data = tk;
             markdown = [
                 `# TikTok Video`,

@@ -9,11 +9,13 @@
 //            with Backup URL Top-Up if primary URLs fail
 //   Stage 4: Semantic Passage Ranking, Key Fact Extraction & Citation-Backed Markdown Synthesis
 
-import { clean, hostOf } from '../utils/http.js';
+import { clean, hostOf, type ProxyInput } from '../utils/http.js';
 import {
   classifyIntent,
   type Intent,
   queryTerms,
+  type SearchTimeRange,
+  type SearchVertical,
   subjectTerms,
   webSearch,
   type WebSource,
@@ -39,12 +41,22 @@ export interface DeepResearchOptions {
   maxPerDomain?: number;
   /** Automatically escalate JS-walled pages to low-memory Puppeteer (default true) */
   autoPuppeteer?: boolean;
+  /** Allow fetching and extracting text from PDF URLs discovered during search (default true) */
+  includePdf?: boolean;
+  /** Optional search vertical preset ('general' | 'pdf' | 'imdb' | 'academic' | 'code' | 'docs' | 'books') */
+  searchType?: SearchVertical;
+  /** Optional domain filter (e.g. 'arxiv.org' or ['github.com', 'docs.rs']) */
+  site?: string | string[];
+  /** Optional recency filter ('day' | 'week' | 'month' | 'year' | 'any') */
+  timeRange?: SearchTimeRange;
   /** Also run parallel image search for visual context (default false) */
   includeImages?: boolean;
   /** Also search YouTube and optionally pull top video transcript (default false) */
   includeYoutube?: boolean;
   /** Total timeout budget in ms (default 45_000) */
   timeoutMs?: number;
+  /** Optional HTTP/HTTPS/SOCKS5 proxy URL or proxy list for rotation */
+  proxy?: ProxyInput;
 }
 
 export interface RankedEvidencePage {
@@ -138,6 +150,7 @@ function selectDiverseSources(
   sources: WebSource[],
   limit: number,
   maxPerDomain: number,
+  includePdf = true,
 ): { primary: WebSource[]; backups: WebSource[] } {
   const domainCounts = new Map<string, number>();
   const primary: WebSource[] = [];
@@ -146,8 +159,11 @@ function selectDiverseSources(
   for (const src of sources) {
     const dom = hostOf(src.url);
     if (!dom) continue;
-    // Skip direct PDF/ZIP binary links for fast HTML/Markdown extraction
-    if (/\.(pdf|zip|tar|gz|exe|dmg|iso|mp4|mp3)(?:$|[?#])/i.test(src.url)) {
+    // Skip binary archive/media links; allow PDFs when includePdf is enabled
+    if (/\.(zip|tar|gz|exe|dmg|iso|mp4|mp3)(?:$|[?#])/i.test(src.url)) {
+      continue;
+    }
+    if (!includePdf && /\.pdf(?:$|[?#])/i.test(src.url)) {
       continue;
     }
     const count = domainCounts.get(dom) || 0;
@@ -253,14 +269,20 @@ export async function deepResearch(options: DeepResearchOptions): Promise<DeepRe
   const webPromise = webSearch({
     queries: angles,
     n: searchLimit,
+    searchType: options.searchType,
+    site: options.site,
+    timeRange: options.timeRange,
+    proxy: options.proxy,
   });
 
   const imagesPromise = options.includeImages
-    ? imageSearch({ query, n: 8 }).catch(() => null)
+    ? imageSearch({ query, n: 8, proxy: options.proxy }).catch(() => null)
     : Promise.resolve(null);
 
   const ytPromise = options.includeYoutube
-    ? youtubeTool({ input: query, mode: 'search', searchLimit: 3 }).catch(() => null)
+    ? youtubeTool({ input: query, mode: 'search', searchLimit: 3, proxy: options.proxy }).catch(
+        () => null,
+      )
     : Promise.resolve(null);
 
   const [webRes, imgRes, ytRes] = await Promise.all([webPromise, imagesPromise, ytPromise]);
@@ -270,6 +292,7 @@ export async function deepResearch(options: DeepResearchOptions): Promise<DeepRe
     webRes.sources,
     maxPages,
     maxPerDomain,
+    options.includePdf !== false,
   );
 
   // ── STAGE 3: Parallel Tiered Content Extraction (HTTP -> Puppeteer) ───────
@@ -292,6 +315,7 @@ export async function deepResearch(options: DeepResearchOptions): Promise<DeepRe
         autoPuppeteer,
         onlyMainContent: true,
         timeoutMs: 14_000,
+        proxy: options.proxy,
       },
     );
   }
@@ -308,6 +332,7 @@ export async function deepResearch(options: DeepResearchOptions): Promise<DeepRe
       autoPuppeteer,
       onlyMainContent: true,
       timeoutMs: 12_000,
+      proxy: options.proxy,
     });
     fetchedPages.push(...extraFetched);
   }
@@ -320,6 +345,7 @@ export async function deepResearch(options: DeepResearchOptions): Promise<DeepRe
         input: ytRes.searchResults[0].url,
         mode: 'transcript',
         timeoutMs: 20_000,
+        proxy: options.proxy,
       });
       if (tr.ok && tr.transcript?.fullText) {
         ytTranscriptSnippet = tr.transcript.fullText.slice(0, 2500);

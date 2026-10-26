@@ -1,3 +1,4 @@
+import { type ProxyInput } from '../utils/http.js';
 export type SocialPlatform = 'twitter' | 'instagram' | 'reddit' | 'github' | 'tiktok' | 'auto';
 export type SocialAction = 'auto' | 'profile' | 'post' | 'search' | 'feed' | 'trending' | 'repo' | 'issue';
 export interface SocialIntelOptions {
@@ -15,6 +16,8 @@ export interface SocialIntelOptions {
     language?: string;
     /** Bypass cache */
     noCache?: boolean;
+    /** Optional HTTP/HTTPS/SOCKS5 proxy URL or proxy list for rotation */
+    proxy?: ProxyInput;
 }
 export interface TwitterTweet {
     id: string;
@@ -134,19 +137,19 @@ export interface SocialIntelResult {
     ms: number;
     error?: string;
 }
-export declare function fetchTwitterTweet(tweetIdOrUrl: string, userHint?: string): Promise<TwitterTweet | null>;
-export declare function fetchTwitterProfile(usernameOrUrl: string, limit?: number): Promise<TwitterProfile | null>;
-export declare function searchTwitterTweets(query: string, limit?: number): Promise<TwitterTweet[]>;
-export declare function fetchInstagramPost(urlOrShortcode: string): Promise<InstagramPost | null>;
-export declare function fetchInstagramProfile(usernameOrUrl: string, limit?: number): Promise<InstagramProfile | null>;
-export declare function searchInstagramPosts(query: string, limit?: number): Promise<InstagramPost[]>;
-export declare function fetchRedditSubreddit(subredditInput: string, sort?: string, limit?: number): Promise<RedditPostItem[]>;
-export declare function fetchRedditPostWithComments(postUrl: string, limit?: number): Promise<{
+export declare function fetchTwitterTweet(tweetIdOrUrl: string, userHint?: string, proxy?: ProxyInput): Promise<TwitterTweet | null>;
+export declare function fetchTwitterProfile(usernameOrUrl: string, limit?: number, proxy?: ProxyInput): Promise<TwitterProfile | null>;
+export declare function searchTwitterTweets(query: string, limit?: number, proxy?: ProxyInput): Promise<TwitterTweet[]>;
+export declare function fetchInstagramPost(urlOrShortcode: string, proxy?: ProxyInput): Promise<InstagramPost | null>;
+export declare function fetchInstagramProfile(usernameOrUrl: string, limit?: number, proxy?: ProxyInput): Promise<InstagramProfile | null>;
+export declare function searchInstagramPosts(query: string, limit?: number, proxy?: ProxyInput): Promise<InstagramPost[]>;
+export declare function fetchRedditSubreddit(subredditInput: string, sort?: string, limit?: number, proxy?: ProxyInput): Promise<RedditPostItem[]>;
+export declare function fetchRedditPostWithComments(postUrl: string, limit?: number, proxy?: ProxyInput): Promise<{
     post: RedditPostItem | null;
     comments: RedditCommentItem[];
 }>;
-export declare function searchReddit(query: string, limit?: number): Promise<RedditPostItem[]>;
-export declare function fetchGithubRepo(repoOrUrl: string): Promise<{
+export declare function searchReddit(query: string, limit?: number, proxy?: ProxyInput): Promise<RedditPostItem[]>;
+export declare function fetchGithubRepo(repoOrUrl: string, proxy?: ProxyInput): Promise<{
     fullName: any;
     url: any;
     description: any;
@@ -170,7 +173,7 @@ export declare function fetchGithubRepo(repoOrUrl: string): Promise<{
     }[];
     readmeExcerpt: string;
 }>;
-export declare function fetchGithubIssueOrPr(issueUrlOrPath: string, limit?: number): Promise<{
+export declare function fetchGithubIssueOrPr(issueUrlOrPath: string, limit?: number, proxy?: ProxyInput): Promise<{
     repo: string;
     number: number;
     type: string;
@@ -189,7 +192,7 @@ export declare function fetchGithubIssueOrPr(issueUrlOrPath: string, limit?: num
         body: string;
     }[];
 }>;
-export declare function fetchGithubTrending(language?: string, since?: string, limit?: number): Promise<{
+export declare function fetchGithubTrending(language?: string, since?: string, limit?: number, proxy?: ProxyInput): Promise<{
     fullName: string;
     url: string;
     description: string;
@@ -198,7 +201,7 @@ export declare function fetchGithubTrending(language?: string, since?: string, l
     starsInPeriod: string;
     period: string;
 }[]>;
-export declare function fetchTiktokInfo(url: string): Promise<{
+export declare function fetchTiktokInfo(url: string, proxy?: ProxyInput): Promise<{
     url: string;
     title: any;
     authorName: any;

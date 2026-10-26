@@ -9,10 +9,11 @@
 [![MCP Ready](https://img.shields.io/badge/MCP-Stdio%20Server-purple.svg)](#mcp-model-context-protocol-server-tx-mcp)
 
 **TuxScout** is a high-performance, ultra-low-memory AI Agent Toolkit engineered for Linux servers, Docker containers, Windows workstations, and macOS environments. It provides:
-- **Global CLI Binaries** (`tuxscout`, `tx-search`, `tx-images`, `tx-social`, `tx-news`, `tx-extract`, `tx-fetch`, `tx-browser`, `tx-yt`, `tx-research`, `tx-serve`, `tx-mcp`)
+- **Global CLI Binaries** (`tuxscout`, `tx-search`, `tx-imdb`, `tx-pdf`, `tx-images`, `tx-social`, `tx-news`, `tx-extract`, `tx-fetch`, `tx-browser`, `tx-yt`, `tx-research`, `tx-serve`, `tx-mcp`)
+- **Universal Proxy IP Support** (`HTTP`, `HTTPS`, `SOCKS5` / `SOCKS5h`, credentials, rotation pools, `--proxy` flag, `TUXSCOUT_PROXY` env var) across **all** tools
 - **Model Context Protocol (MCP) Server** (`tx-mcp` — zero-dependency JSON-RPC 2.0 over stdio)
 - **HTTP REST API Server** (`tx-serve` — drop-in compatible with Delphos web/image gateways)
-- **TypeScript / Node.js SDK** (`import { webSearch, imageSearch, socialIntel, newsIntel, smartExtract, fetchMarkdown, fetchWithPuppeteer, youtubeTool, deepResearch } from 'tuxscout'`)
+- **TypeScript / Node.js SDK** (`import { webSearch, searchImdb, searchPdf, imageSearch, socialIntel, newsIntel, smartExtract, fetchMarkdown, fetchWithPuppeteer, youtubeTool, deepResearch, setGlobalProxy } from 'tuxscout'`)
 
 ---
 
@@ -56,14 +57,32 @@ tuxscout setup
 
 ## 🛠️ Included Tools & Architecture
 
-### 1. Multi-Engine Internet Web Search (`tx-search`)
-- **Engines:** DuckDuckGo HTML, DuckDuckGo Lite, Brave Search, Yahoo Search (with manual `/_bv` redirect & `YBV` cookie jar persistence), Wikipedia API, and Bing.
+### 1. Multi-Engine Internet Web Search & Advanced Operators (`tx-search`, `tx-imdb`, `tx-pdf`)
+- **Engines:** DuckDuckGo HTML, DuckDuckGo Lite, Brave Search, Yahoo Search (with manual `/_bv` redirect & `YBV` cookie jar persistence), Wikipedia API, Bing, **IMDb**, **ArXiv**, and **OpenAlex**.
+- **Advanced Search Operators:**
+  - Vertical Search Modes (`--type`): `'general' | 'pdf' | 'imdb' | 'academic' | 'code' | 'docs' | 'books'`
+  - Structured Filters: `--site` (single or comma-separated domains), `--exclude-site`, `--filetype`, `--pdf`, `--imdb`, `--intitle`, `--inurl`, `--exact`, `--exclude`, `--time` (`day | week | month | year | any`), and `--region`.
+- **Dedicated IMDb Search & Rich Dossier Extraction (`tx-imdb`):**
+  - Searches IMDb for movies, TV series, actors, and directors (`tx-imdb "Inception"`), or extracts full movie/TV/person dossiers (`tx-imdb tt1375666 --extract` or `tx-extract imdb:Inception`) including rating, votes, genres, runtime, release date, directors, cast, plot, keywords, awards, and filmography.
+- **Dedicated Multi-Engine PDF Search & Zero-Dependency PDF Parser (`tx-pdf`):**
+  - Combines web `filetype:pdf` search with direct **ArXiv** & **OpenAlex** open-access PDF feeds (`tx-pdf "Attention Is All You Need"`).
+  - Extracts full text and metadata (`Title`, `Author`, `PageCount`) directly from remote `.pdf` URLs using Node's native `zlib` stream decompressor (`tx-pdf <pdf-url> --extract` or `tx-extract pdf:<url>`) with zero external PDF dependencies.
 - **4-Layer Relevance & Quality Filter:**
   1. **Intent Classification:** Distinguishes `news` / release queries from `evergreen` and `navigational` queries.
   2. **Subject vs. Freshness Separation:** Prevents generic news portals from hijacking queries containing words like `"latest"` or `"upcoming"`.
   3. **Landing-Page Rejection:** Filters out bare marketing homepages when the query asks for news, releases, or changelogs.
   4. **Engine-Level Relevance Verdict:** Detects off-topic SERPs (`ratio < 0.34`) and automatically fails over to the next engine.
 - **Multi-Query Parallel Execution:** Accepts multiple `--query` angles, executes them concurrently, and merges results round-robin by rank.
+
+### 10. Universal Proxy IP & Rotation Pool Support (`--proxy`)
+- Works across **all** tools: Web Search, IMDb, PDF, Image Search & Download, Social Intel, News Intel, Smart Extract, Markdown Fetch, Puppeteer Headless Browser (`--proxy-server` + `page.authenticate`), YouTube (`yt-dlp --proxy`), and Deep Research.
+- **Flexible Proxy Formats (Zero Extra Dependencies):**
+  - `http://host:port` or `http://user:pass@host:port`
+  - `https://host:port` or `https://user:pass@host:port`
+  - `socks5://host:port` or `socks5h://user:pass@host:port` (native RFC 1928/1929 SOCKS5 tunnel with remote DNS)
+  - Shorthand `host:port`, `host:port:user:pass`, or `user:pass@host:port`
+  - **Proxy Rotation Pools:** Pass a comma-separated string (`"http://1.1.1.1:8080,socks5://2.2.2.2:1080"`) or `string[]` in the SDK to automatically rotate and fail over across proxies.
+  - **Environment / Global Config:** Set `TUXSCOUT_PROXY`, `ALL_PROXY`, `HTTPS_PROXY`, or `HTTP_PROXY`, or call `setGlobalProxy(...)` in Node.js.
 
 ### 2. 5-Engine Live-Verified Image Search & Parallel Downloader (`tx-images`)
 - **Engines:** Bing Async Image Grid, DuckDuckGo (`vqd` token + `i.js`), Yahoo Image Tiles, Wikimedia Commons API, and Openverse CC API.
@@ -128,9 +147,25 @@ tuxscout doctor
 # Export JSON tool schemas for AI Agents / LLM Function Calling
 tuxscout schema
 
-# 1. Web Search (single query or parallel multi-angle queries)
+# 1. Web Search & Advanced Search Operators
 tx-search "Linux kernel 6.12 release notes" -n 5
 tx-search --query "Node.js v24 features" --query "Node 24 vs Bun benchmarks" --json
+tx-search "ebpf packet filter" --type pdf --site arxiv.org,kernel.org --exact "XDP" --exclude windows --time year
+
+# 1b. IMDb Movie/TV/Actor Search & Full Dossier Extraction
+tx-imdb "Inception" -n 5
+tx-imdb tt1375666 --extract
+tx-extract "imdb:Interstellar"
+
+# 1c. PDF Search & Zero-Dependency PDF Text Extraction
+tx-pdf "Attention Is All You Need" -n 5
+tx-pdf "https://arxiv.org/pdf/1706.03762.pdf" --extract
+tx-extract "pdf:https://arxiv.org/pdf/1706.03762.pdf"
+
+# 1d. Using Universal Proxy IP (HTTP / HTTPS / SOCKS5 / Rotation Pool) with ANY command
+tx-search "linux kernel" --proxy socks5://127.0.0.1:1080
+tx-social "@nasa" --proxy 192.168.1.10:8080:myuser:mypass
+tx-research "quantum error correction" --proxy "http://p1.example.com:8080,socks5://p2.example.com:1080"
 
 # 2. Image Search (live-verified URLs) & Parallel Download
 tx-images "Linux Tux penguin" -n 5
@@ -226,7 +261,9 @@ AGENT_TOOLS_SECRET="your-secret-key" tx-serve --port 8787
 |--------|----------|-------------|
 | `GET` | `/health` | Health check, RAM usage, and detected system binaries |
 | `GET` | `/schema` | Full OpenAI / Anthropic / MCP JSON tool schemas |
-| `GET/POST` | `/search` | Multi-engine Web Search (`{ query, queries?, n?, engine? }`) |
+| `GET/POST` | `/search` | Multi-engine Web Search (`{ query, queries?, n?, engine?, searchType?, site?, filetype?, pdfOnly?, timeRange?, proxy? }`) |
+| `GET/POST` | `/imdb` | IMDb Movie/TV/Person Search or Dossier Extraction (`{ query, id?, extract?, n?, proxy? }`) |
+| `GET/POST` | `/pdf` | Multi-engine PDF Search or Direct PDF Text Extraction (`{ query, url?, extract?, n?, maxChars?, proxy? }`) |
 | `GET/POST` | `/images` | Live-verified Image Search (`{ q, n?, safe?, verifyUrls?, download?, outputDir? }`) |
 | `POST` | `/images/download` | Parallel verified image downloader (`{ query?, images?, outputDir, count? }`) |
 | `GET/POST` | `/fetch` | Website-to-Markdown (`{ url }` or batch `{ urls: string[], autoPuppeteer?: true }`) |

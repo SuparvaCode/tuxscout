@@ -1,3 +1,4 @@
+import { type ProxyInput } from '../utils/http.js';
 import { type PageMetadata } from '../utils/html.js';
 export interface MarkdownFetchOptions {
     url: string;
@@ -10,6 +11,8 @@ export interface MarkdownFetchOptions {
     forcePuppeteer?: boolean;
     noCache?: boolean;
     headers?: Record<string, string>;
+    /** Optional HTTP/HTTPS/SOCKS5 proxy URL or proxy list for rotation */
+    proxy?: ProxyInput;
 }
 export interface MarkdownFetchResult {
     url: string;

@@ -7,7 +7,15 @@ import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { clean, DEFAULT_UA, fetchBytesWithJar, fetchTextWithJar, isHttpUrl } from '../utils/http.js';
+import {
+  clean,
+  DEFAULT_UA,
+  fetchBytesWithJar,
+  fetchTextWithJar,
+  isHttpUrl,
+  resolveProxy,
+  type ProxyInput,
+} from '../utils/http.js';
 import { decodeEntities } from '../utils/html.js';
 
 export type YtMode = 'video' | 'audio' | 'transcript' | 'info' | 'search';
@@ -65,6 +73,8 @@ export interface YtToolOptions {
   filenamePrefix?: string;
   /** Max execution timeout in ms (default 180_000 for downloads, 30_000 for info/search) */
   timeoutMs?: number;
+  /** Optional HTTP/HTTPS/SOCKS5 proxy URL or proxy list for rotation */
+  proxy?: ProxyInput;
 }
 
 export interface YtToolResult {
@@ -166,7 +176,7 @@ export function hasFfmpeg(): boolean {
   return Boolean(findFfmpegBinary());
 }
 
-export async function ensureYtDlp(): Promise<string> {
+export async function ensureYtDlp(proxy?: ProxyInput): Promise<string> {
   if (process.env.YT_DLP_PATH && fsSync.existsSync(process.env.YT_DLP_PATH)) {
     return process.env.YT_DLP_PATH;
   }
@@ -194,6 +204,7 @@ export async function ensureYtDlp(): Promise<string> {
     Date.now() + 60_000,
     { 'User-Agent': 'TuxScout/1.0' },
     60 * 1024 * 1024,
+    proxy,
   );
   if (status >= 400 || buffer.length < 100_000) {
     throw new Error(
@@ -520,6 +531,7 @@ async function tryFastInnertubeTranscript(
   videoId: string,
   preferredLang: string,
   deadline: number,
+  proxy?: ProxyInput,
 ): Promise<{ metadata?: YtVideoMetadata; segments: TranscriptSegment[]; language: string } | null> {
   try {
     const watchUrl = `https://www.youtube.com/watch?v=${videoId}&hl=en`;
@@ -532,6 +544,8 @@ async function tryFastInnertubeTranscript(
         'Accept-Language': 'en-US,en;q=0.9',
         Cookie: 'CONSENT=YES+cb.20210328-17-p0.en+FX+410',
       },
+      undefined,
+      proxy,
     );
     if (status >= 400 || !text) return null;
 
@@ -599,6 +613,8 @@ async function tryFastInnertubeTranscript(
           'User-Agent': DEFAULT_UA,
           Referer: watchUrl,
         },
+        undefined,
+        proxy,
       );
       if (subRes.status === 200 && subRes.text.trim().length > 20) {
         const segments = parseVttOrSrt(subRes.text);
@@ -646,6 +662,7 @@ async function tryDirectYoutubeSearch(
   videoType: YtVideoType,
   limit: number,
   timeoutMs = 10_000,
+  proxy?: ProxyInput,
 ): Promise<YtVideoMetadata[]> {
   try {
     const cleanQ = query.replace(/^ytsearch\d*:/i, '').trim();
@@ -661,6 +678,8 @@ async function tryDirectYoutubeSearch(
         'Accept-Language': 'en-US,en;q=0.9',
         Cookie: 'CONSENT=YES+cb.20210328-17-p0.en+FX+410',
       },
+      undefined,
+      proxy,
     );
     if (status >= 400 || !text) return [];
     const m = /var ytInitialData\s*=\s*(\{[\s\S]*?\});<\/script>/.exec(text);
@@ -822,7 +841,7 @@ export async function youtubeTool(options: YtToolOptions): Promise<YtToolResult>
     options.mode || (isHttpUrl(rawInput) || directVideoId ? 'video' : 'search');
   const videoType: YtVideoType = options.videoType || 'long';
 
-  const ytDlpBin = await ensureYtDlp();
+  const ytDlpBin = await ensureYtDlp(options.proxy);
   const ffmpegBin = findFfmpegBinary();
   const ffmpegOk = Boolean(ffmpegBin);
   const baseArgs = ['--no-warnings', '--no-check-certificates', '--geo-bypass'];
@@ -831,6 +850,10 @@ export async function youtubeTool(options: YtToolOptions): Promise<YtToolResult>
   }
   if (options.cookiesFile && fsSync.existsSync(options.cookiesFile)) {
     baseArgs.push('--cookies', path.resolve(options.cookiesFile));
+  }
+  const resolvedProxy = resolveProxy(options.proxy);
+  if (resolvedProxy?.url) {
+    baseArgs.push('--proxy', resolvedProxy.url);
   }
 
   // ── Mode 1: YouTube Search (with Shorts vs Long-Form Filtering) ───────────
@@ -844,6 +867,7 @@ export async function youtubeTool(options: YtToolOptions): Promise<YtToolResult>
       videoType,
       limit,
       Math.min(10_000, timeoutMs),
+      options.proxy,
     );
     if (fastItems.length > 0) {
       return {
@@ -978,7 +1002,7 @@ export async function youtubeTool(options: YtToolOptions): Promise<YtToolResult>
 
     // Tier 1: Try fast direct Innertube/watch-page extraction (~1s) when videoId is known
     if (directVideoId) {
-      const fastHit = await tryFastInnertubeTranscript(directVideoId, lang, deadline);
+      const fastHit = await tryFastInnertubeTranscript(directVideoId, lang, deadline, options.proxy);
       if (fastHit && fastHit.segments.length > 0) {
         const fullText = fastHit.segments.map((s) => s.text).join(' ');
         const mdLines = [
@@ -1074,6 +1098,8 @@ export async function youtubeTool(options: YtToolOptions): Promise<YtToolResult>
           'User-Agent': DEFAULT_UA,
           'Accept-Language': 'en-US,en;q=0.9',
         },
+        undefined,
+        options.proxy,
       );
       subText = subRes.text;
       subStatus = subRes.status;

@@ -4,7 +4,14 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { webSearch } from './tools/web-search.js';
+import { setGlobalProxy, type ProxyInput } from './utils/http.js';
+import {
+  searchImdb,
+  searchPdf,
+  webSearch,
+  type SearchTimeRange,
+  type SearchVertical,
+} from './tools/web-search.js';
 import { downloadImages, imageSearch, type SafeSearch } from './tools/image-search.js';
 import { fetchMarkdown, fetchMarkdownBatch } from './tools/markdown-fetch.js';
 import {
@@ -82,20 +89,22 @@ function printHelp(): void {
   console.log(`
 ╔════════════════════════════════════════════════════════════════════════════╗
 ║                 TUXSCOUT v1.1.1 (Linux • Windows • macOS)                  ║
-║   Web Search • Image Search/DL • Social Intel • Live News • Smart Extract  ║
-║     Markdown Fetch • Low-RAM Puppeteer JS • YouTube • Deep Research        ║
+║   Web Search • IMDb • PDF Search/Extract • Social Intel • Live News        ║
+║     Markdown Fetch • Low-RAM Puppeteer JS • YouTube • Proxy Rotation       ║
 ╚════════════════════════════════════════════════════════════════════════════╝
 
 USAGE:
   tuxscout <command> [arguments] [flags]
 
 COMMANDS & SHORTHAND BINARIES:
-  search   (tx-search)    Multi-engine Web Search with 4-layer relevance filter
+  search   (tx-search)    Multi-engine Web Search + Advanced Filters (PDF, IMDb, Academic, Code, Site)
+  imdb                    IMDb Movie/TV/Actor Search & Rich Title Dossier Extractor
+  pdf                     PDF Document Search (Web + ArXiv + OpenAlex) & Direct PDF Text Extractor
   images   (tx-images)    5-Engine Image Search & Parallel Verified Downloader
   social   (tx-social)    Zero-browser Social Scraper (Twitter/X, Instagram, Reddit, GitHub, TikTok)
   news     (tx-news)      Live News & Tech Intelligence (Google News, HackerNews, Reddit, Curated RSS)
-  extract  (tx-extract)   Zero-browser Smart Knowledge Extractor (SO, ArXiv, Wiki, NPM, PyPI, Web)
-  fetch    (tx-fetch)     Fast Website-to-Markdown fetch (auto-intercepts Social/APIs & escalates to JS)
+  extract  (tx-extract)   Zero-browser Smart Knowledge Extractor (IMDb, PDF, SO, ArXiv, Wiki, NPM, PyPI)
+  fetch    (tx-fetch)     Fast Website-to-Markdown fetch (auto-intercepts PDF/IMDb/Social & JS fallback)
   browser  (tx-browser)   Ultra-low-RAM Headless Chromium / Puppeteer JS fetch
   yt       (tx-yt)        YouTube Video, Music/Audio, Search & Transcript tool
   research (tx-research)  4-Stage Parallel Multi-Angle Search & Deep Research
@@ -106,8 +115,39 @@ COMMANDS & SHORTHAND BINARIES:
   doctor                  Verify binaries (Chromium, yt-dlp, ffmpeg) & live test
   test                    Run the end-to-end verification suite
 
+GLOBAL PROXY SUPPORT (works across all commands):
+  --proxy <url|list>      HTTP/HTTPS/SOCKS5 proxy or comma-separated rotation pool
+                          Formats: http://user:pass@host:port, socks5://host:port, host:port:user:pass
+                          Env vars: TUXSCOUT_PROXY, ALL_PROXY, HTTPS_PROXY, HTTP_PROXY
+
+ADVANCED SEARCH FLAGS (for 'search'):
+  --type <vertical>       general | pdf | imdb | academic | code | docs | books
+  --pdf                   Shorthand for --type pdf (search only PDF documents)
+  --imdb                  Shorthand for --type imdb (search IMDb titles & people)
+  --filetype <ext>        Filter by file extension (e.g. pdf, docx, csv)
+  --site <domain>         Restrict to domain(s) (e.g. --site github.com)
+  --exclude-site <dom>    Exclude domain(s) (e.g. --exclude-site pinterest.com)
+  --intitle <term>        Require term in page title
+  --inurl <term>          Require term in page URL
+  --exact <phrase>        Require exact phrase match
+  --exclude <term>        Exclude word/phrase
+  --time <range>          day | week | month | year | any
+  --region <code >        Region code (e.g. us-en, uk-en, in-en)
+
 EXAMPLES:
-  # 1. Social Media Reconnaissance (Zero-Browser Structured JSON/Markdown)
+  # 1. Advanced Search, IMDb & PDF Intelligence
+  tuxscout search "transformer architecture" --pdf --time year -n 5
+  tuxscout search "cuda kernel optimization" --type code --site github.com
+  tuxscout imdb "Oppenheimer"                                   # IMDb title dossier + rating/cast/plot
+  tuxscout imdb "tt15398776"                                    # Direct IMDb ID extraction
+  tuxscout pdf "linux ebpf whitepaper" -n 5                     # Multi-engine + ArXiv/OpenAlex PDF search
+  tuxscout pdf "https://arxiv.org/pdf/1706.03762.pdf"           # Extract text & metadata from PDF URL
+
+  # 2. Proxy IP Support across any method
+  tuxscout search "my ip" --proxy socks5://127.0.0.1:1080
+  tuxscout fetch https://example.com --proxy "http://p1:8080,http://p2:8080"
+
+  # 3. Social Media Reconnaissance (Zero-Browser Structured JSON/Markdown)
   tx-social "https://x.com/jack/status/20"                      # X/Twitter single tweet & thread stats
   tx-social "@torvalds" --platform twitter -n 5                 # X/Twitter profile + recent tweets
   tx-social "@nasa" --platform instagram -n 5                   # Instagram profile + recent posts/reels
@@ -116,41 +156,52 @@ EXAMPLES:
   tx-social "gh:trending" --lang typescript                     # GitHub trending repositories
   tx-social "torvalds/linux"                                    # GitHub repo overview, releases & README
 
-  # 2. Live News & Tech Intelligence Aggregator
+  # 4. Live News & Tech Intelligence Aggregator
   tx-news --category ai -n 10                                   # Live AI news (Google News + HN + Tech RSS)
   tx-news "Linux kernel 6.14" --when 7d -n 10                   # Topic news search within last 7 days
   tx-news --category hn -n 15                                   # Hacker News frontpage
   tx-news --hn-id 8863                                          # Full Hacker News story + comment tree
 
-  # 3. Zero-Browser Smart Knowledge Extractor
+  # 5. Zero-Browser Smart Knowledge Extractor
+  tx-extract "imdb:Interstellar"                                # IMDb movie dossier & cast
+  tx-extract "pdf:https://arxiv.org/pdf/1706.03762.pdf"         # Direct PDF text extraction
   tx-extract "https://stackoverflow.com/questions/11227809"     # StackOverflow question + top answers
-  tx-extract "so:node fetch timeout"                            # StackOverflow search + accepted answers
   tx-extract "arxiv:1706.03762"                                 # ArXiv paper abstract, authors & PDF link
   tx-extract "npm:tuxscout"                                     # NPM package metadata & weekly downloads
   tx-extract "pypi:fastapi"                                     # PyPI package metadata & dependencies
   tx-extract "wiki:Linux_kernel"                                # Wikipedia structured summary
 
-  # 4. Web Search & Verified Image Search/Download
+  # 6. Web Search & Verified Image Search/Download
   tx-search "Gemini 4 release notes" -n 10 --json
   tx-images "mountain landscape wallpaper" --download --out ./wallpapers -n 5
 
-  # 5. Fast Website-to-Markdown & Low-RAM Puppeteer JS Fetch
+  # 7. Fast Website-to-Markdown & Low-RAM Puppeteer JS Fetch
   tx-fetch https://en.wikipedia.org/wiki/Linux --max-chars 5000
   tx-browser https://example.com --scroll --screenshot ./page.png
 
-  # 6. YouTube Video / Music / Transcript / Search (filters Shorts vs Long videos)
+  # 8. YouTube Video / Music / Transcript / Search (filters Shorts vs Long videos)
   tx-yt "https://www.youtube.com/watch?v=jNQXAC9IVRw" --mode transcript
   tx-yt "linux kernel tutorial" -n 5                            # Long-form videos only (default)
   tx-yt "linux tips" --shorts -n 5                              # YouTube Shorts only (<=60s)
 
-  # 7. Multi-Stage Parallel Deep Research
+  # 9. Multi-Stage Parallel Deep Research
   tx-research "Compare Bun vs Node.js v24 performance" --depth standard --save ./report.md
 `);
+}
+
+function flagToStringOrArray(val: string | boolean | string[] | undefined): string | string[] | undefined {
+  if (typeof val === 'string') return val;
+  if (Array.isArray(val)) return val;
+  return undefined;
 }
 
 export async function runCommand(command: string, rawArgs: string[]): Promise<void> {
   const { positional, flags } = parseCliArgs(rawArgs);
   const asJson = Boolean(flags.json || flags.j);
+  const proxy = flagToStringOrArray(flags.proxy) as ProxyInput | undefined;
+  if (proxy) {
+    setGlobalProxy(proxy);
+  }
 
   switch (command) {
     case 'search':
@@ -170,24 +221,158 @@ export async function runCommand(command: string, rawArgs: string[]): Promise<vo
       }
       const n = Number(flags.n || flags.count || 10);
       const engine = typeof flags.engine === 'string' ? flags.engine : undefined;
+      const rawType = typeof (flags.type || flags['search-type']) === 'string'
+        ? String(flags.type || flags['search-type']).toLowerCase()
+        : flags.pdf || flags['pdf-only']
+          ? 'pdf'
+          : flags.imdb
+            ? 'imdb'
+            : undefined;
+      const searchType = rawType as SearchVertical | undefined;
+      const site = flagToStringOrArray(flags.site);
+      const excludeSite = flagToStringOrArray(flags['exclude-site'] || flags.excludeSite);
+      const filetype = typeof (flags.filetype || flags.ext) === 'string'
+        ? String(flags.filetype || flags.ext)
+        : undefined;
+      const pdfOnly = Boolean(flags.pdf || flags['pdf-only'] || flags.pdfOnly);
+      const intitle = typeof flags.intitle === 'string' ? flags.intitle : undefined;
+      const inurl = typeof flags.inurl === 'string' ? flags.inurl : undefined;
+      const exactPhrase = typeof (flags.exact || flags.phrase) === 'string'
+        ? String(flags.exact || flags.phrase)
+        : undefined;
+      const excludeTerms = flagToStringOrArray(flags.exclude || flags['exclude-terms']);
+      const timeRange = (
+        typeof (flags.time || flags.when || flags['time-range']) === 'string'
+          ? String(flags.time || flags.when || flags['time-range'])
+          : undefined
+      ) as SearchTimeRange | undefined;
+      const region = typeof flags.region === 'string' ? flags.region : undefined;
+
       const res = await webSearch({
         queries,
         n,
         engine,
+        proxy,
+        searchType,
+        site,
+        excludeSite,
+        filetype,
+        pdfOnly,
+        intitle,
+        inurl,
+        exactPhrase,
+        excludeTerms,
+        timeRange,
+        region,
       });
 
       if (asJson) {
         console.log(JSON.stringify(res, null, 2));
       } else {
         console.log(
-          `# Web Search (${res.sources.length} results via [${res.engines.join(', ')}] in ${res.ms}ms, intent=${res.intent})\n`,
+          `# Web Search (${res.sources.length} results via [${res.engines.join(', ')}] in ${res.ms}ms, intent=${res.intent}${res.searchType && res.searchType !== 'general' ? `, type=${res.searchType}` : ''})\n`,
         );
         res.sources.forEach((s, i) => {
-          console.log(`${i + 1}. **${s.title}**`);
+          const badge = s.fileType ? `[${s.fileType.toUpperCase()}] ` : '';
+          console.log(`${i + 1}. ${badge}**${s.title}**`);
           console.log(`   URL: ${s.url}`);
           if (s.description) console.log(`   ${s.description}`);
           console.log('');
         });
+      }
+      break;
+    }
+
+    case 'imdb': {
+      const target =
+        typeof flags.target === 'string'
+          ? flags.target
+          : typeof flags.query === 'string'
+            ? flags.query
+            : positional.join(' ');
+      if (!target) {
+        console.error('Error: Provide an IMDb query, title/person ID (tt.../nm...), or URL. Example: tuxscout imdb "Inception"');
+        process.exit(1);
+      }
+      const n = Number(flags.n || flags.limit || flags.count || 8);
+      if (flags['search-only'] || flags.search) {
+        const res = await searchImdb(target, n, proxy);
+        if (asJson) {
+          console.log(JSON.stringify(res, null, 2));
+        } else {
+          console.log(`# IMDb Search Results (${res.sources.length} matches in ${res.ms}ms)\n`);
+          res.sources.forEach((s, i) => {
+            console.log(`${i + 1}. **${s.title}**`);
+            console.log(`   URL: ${s.url}`);
+            if (s.description) console.log(`   ${s.description}`);
+            console.log('');
+          });
+        }
+      } else {
+        const prefixed =
+          /^(imdb:|https?:\/\/|(?:tt|nm)\d{5,10}$)/i.test(target.trim())
+            ? target.trim()
+            : `imdb:${target.trim()}`;
+        const res = await smartExtract({
+          target: prefixed,
+          provider: 'imdb',
+          limit: n,
+          proxy,
+        });
+        if (asJson) {
+          console.log(JSON.stringify(res, null, 2));
+        } else {
+          console.log(res.markdown);
+        }
+      }
+      break;
+    }
+
+    case 'pdf': {
+      const target =
+        typeof flags.url === 'string'
+          ? flags.url
+          : typeof flags.query === 'string'
+            ? flags.query
+            : positional.join(' ');
+      if (!target) {
+        console.error('Error: Provide a PDF search query or direct PDF URL. Example: tuxscout pdf "linux ebpf"');
+        process.exit(1);
+      }
+      const isDirectUrl = /^https?:\/\//i.test(target.trim()) || /^pdf:https?:\/\//i.test(target.trim());
+      if (isDirectUrl || flags.extract) {
+        const maxChars = Number(flags['max-chars'] || flags.maxChars || 12000);
+        const res = await smartExtract({
+          target: target.trim(),
+          provider: 'pdf',
+          maxChars,
+          proxy,
+        });
+        if (asJson) {
+          console.log(JSON.stringify(res, null, 2));
+        } else {
+          console.log(res.markdown);
+        }
+      } else {
+        const n = Number(flags.n || flags.limit || flags.count || 10);
+        const site = flagToStringOrArray(flags.site);
+        const timeRange = (
+          typeof (flags.time || flags.when) === 'string' ? String(flags.time || flags.when) : undefined
+        ) as SearchTimeRange | undefined;
+        const res = await searchPdf(target, { n, proxy, site, timeRange });
+        if (asJson) {
+          console.log(JSON.stringify(res, null, 2));
+        } else {
+          console.log(
+            `# PDF Search (${res.sources.length} PDF documents via [${res.engines.join(', ')}] in ${res.ms}ms)\n`,
+          );
+          res.sources.forEach((s, i) => {
+            console.log(`${i + 1}. [PDF] **${s.title}**`);
+            console.log(`   URL: ${s.url}`);
+            if (s.description) console.log(`   ${s.description}`);
+            console.log('');
+          });
+        }
       }
       break;
     }
@@ -218,6 +403,7 @@ export async function runCommand(command: string, rawArgs: string[]): Promise<vo
           count: n,
           safe,
           engine,
+          proxy,
         });
         if (asJson) {
           console.log(JSON.stringify(dlRes, null, 2));
@@ -240,7 +426,7 @@ export async function runCommand(command: string, rawArgs: string[]): Promise<vo
           process.exit(1);
         }
         const verifyUrls = flags['no-verify'] ? false : true;
-        const res = await imageSearch({ query, n, safe, engine, verifyUrls });
+        const res = await imageSearch({ query, n, safe, engine, verifyUrls, proxy });
         if (asJson) {
           console.log(JSON.stringify(res, null, 2));
         } else {
@@ -283,6 +469,7 @@ export async function runCommand(command: string, rawArgs: string[]): Promise<vo
             includeImages,
             autoPuppeteer,
             forcePuppeteer,
+            proxy,
           });
           if (typeof flags.save === 'string' || typeof flags.out === 'string') {
             const outPath = path.resolve(String(flags.save || flags.out));
@@ -305,6 +492,7 @@ export async function runCommand(command: string, rawArgs: string[]): Promise<vo
             includeImages,
             autoPuppeteer,
             forcePuppeteer,
+            proxy,
           });
           if (asJson) {
             console.log(JSON.stringify(batch, null, 2));
@@ -351,6 +539,7 @@ export async function runCommand(command: string, rawArgs: string[]): Promise<vo
         evaluateScript,
         maxChars,
         closeBrowserAfter: true,
+        proxy,
       });
 
       if (asJson) {
@@ -425,6 +614,7 @@ export async function runCommand(command: string, rawArgs: string[]): Promise<vo
           : undefined,
         subLang: typeof flags.lang === 'string' ? flags.lang : undefined,
         cookiesFile: typeof flags.cookies === 'string' ? flags.cookies : undefined,
+        proxy,
       });
 
       if (asJson) {
@@ -487,6 +677,13 @@ export async function runCommand(command: string, rawArgs: string[]): Promise<vo
           maxPages,
           includeImages: Boolean(flags.images),
           includeYoutube: Boolean(flags.yt || flags.youtube),
+          includePdf: Boolean(flags.pdf || flags['include-pdf']),
+          searchType: typeof flags.type === 'string' ? (flags.type as SearchVertical) : undefined,
+          site: flagToStringOrArray(flags.site),
+          timeRange: typeof (flags.time || flags.when) === 'string'
+            ? (String(flags.time || flags.when) as SearchTimeRange)
+            : undefined,
+          proxy,
         });
 
         if (typeof flags.save === 'string' || typeof flags.out === 'string') {
@@ -570,6 +767,7 @@ export async function runCommand(command: string, rawArgs: string[]): Promise<vo
         limit,
         sort: sort as 'hot' | 'new' | 'top' | 'daily' | 'weekly' | 'monthly' | undefined,
         language,
+        proxy,
       });
 
       if (typeof flags.save === 'string' || typeof flags.out === 'string') {
@@ -618,6 +816,7 @@ export async function runCommand(command: string, rawArgs: string[]): Promise<vo
         when,
         limit,
         hnItemId,
+        proxy,
       });
 
       if (asJson) {
@@ -644,7 +843,7 @@ export async function runCommand(command: string, rawArgs: string[]): Promise<vo
       }
       const limit = Number(flags.n || flags.limit || flags.count || 8);
       const maxChars = Number(flags['max-chars'] || flags.maxChars || 6000);
-      const res = await smartExtract({ target, limit, maxChars });
+      const res = await smartExtract({ target, limit, maxChars, proxy });
       if (asJson) {
         console.log(JSON.stringify(res, null, 2));
       } else {

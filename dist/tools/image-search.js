@@ -4,7 +4,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { API_UA, BROWSER_HEADERS, CircuitBreaker, clean, clearCookieJar, DEFAULT_UA, EngineError, fetchBytesWithJar, fetchTextWithJar, hasCookies, hostOf, isHttpUrl, LruCache, num, } from '../utils/http.js';
+import { API_UA, BROWSER_HEADERS, CircuitBreaker, clean, clearCookieJar, DEFAULT_UA, EngineError, fetchBytesWithJar, fetchTextWithJar, hasCookies, hostOf, isHttpUrl, LruCache, num, proxyFetch, } from '../utils/http.js';
 import { attr, textOnly } from '../utils/html.js';
 // ── Tunables ────────────────────────────────────────────────────────────────
 const ENGINE_TIMEOUT_MS = 6_000;
@@ -129,7 +129,7 @@ function parseBingImages(html) {
         noResults: !out.length && /there are no results for|we didn't find any results/.test(lower),
     };
 }
-async function runBing(q, n, safe, deadline) {
+async function runBing(q, n, safe, deadline, proxy) {
     const adlt = safe === 'off' ? 'off' : safe;
     const pages = n > 35 ? [0, 35] : [0];
     const all = [];
@@ -141,7 +141,7 @@ async function runBing(q, n, safe, deadline) {
             'Sec-Fetch-Dest': 'empty',
             'Sec-Fetch-Mode': 'cors',
             'Sec-Fetch-Site': 'same-origin',
-        });
+        }, undefined, proxy);
         checkStatus('bing', status, text);
         const parsed = parseBingImages(text);
         if (parsed.noResults)
@@ -153,11 +153,11 @@ async function runBing(q, n, safe, deadline) {
     return { images: all, noResults: noResults && !all.length };
 }
 // ── Engine 2: DuckDuckGo (vqd token -> i.js JSON) ───────────────────────────
-async function ddgVqd(q, deadline) {
+async function ddgVqd(q, deadline, proxy) {
     const hit = vqdCache.get(q);
     if (hit && Date.now() - hit.at < 10 * 60_000)
         return hit.vqd;
-    const { status, text } = await fetchTextWithJar('ddg-img', `https://duckduckgo.com/?q=${encodeURIComponent(q)}&iax=images&ia=images`, deadline);
+    const { status, text } = await fetchTextWithJar('ddg-img', `https://duckduckgo.com/?q=${encodeURIComponent(q)}&iax=images&ia=images`, deadline, undefined, undefined, proxy);
     checkStatus('duckduckgo', status, text);
     const m = /vqd=["']?([\d-]+)["']?/.exec(text);
     if (!m)
@@ -167,8 +167,8 @@ async function ddgVqd(q, deadline) {
     vqdCache.set(q, { vqd: m[1], at: Date.now() });
     return m[1];
 }
-async function runDuckDuckGo(q, n, safe, deadline) {
-    const vqd = await ddgVqd(q, deadline);
+async function runDuckDuckGo(q, n, safe, deadline, proxy) {
+    const vqd = await ddgVqd(q, deadline, proxy);
     const p = safe === 'off' ? '-1' : '1';
     const url = `https://duckduckgo.com/i.js?l=us-en&o=json&q=${encodeURIComponent(q)}&vqd=${encodeURIComponent(vqd)}&f=,,,,,&p=${p}`;
     const { status, text } = await fetchTextWithJar('ddg-img', url, deadline, {
@@ -177,7 +177,7 @@ async function runDuckDuckGo(q, n, safe, deadline) {
         'Accept-Language': 'en-US,en;q=0.9',
         Referer: 'https://duckduckgo.com/',
         'X-Requested-With': 'XMLHttpRequest',
-    });
+    }, undefined, proxy);
     if (status === 403)
         vqdCache.delete(q);
     checkStatus('duckduckgo', status, text);
@@ -258,13 +258,13 @@ function parseYahooImages(html) {
         noResults: !out.length && /we did not find results for|no results found for/.test(lower),
     };
 }
-async function runYahoo(q, _n, safe, deadline) {
+async function runYahoo(q, _n, safe, deadline, proxy) {
     const vm = safe === 'strict' ? '&vm=r' : '';
     const url = `https://images.search.yahoo.com/search/images?p=${encodeURIComponent(q)}${vm}`;
-    let { status, text } = await fetchTextWithJar('yahoo-img', url, deadline);
+    let { status, text } = await fetchTextWithJar('yahoo-img', url, deadline, undefined, undefined, proxy);
     if (status >= 500 && !text && hasCookies('yahoo-img') && deadline - Date.now() > 1_000) {
         clearCookieJar('yahoo-img');
-        ({ status, text } = await fetchTextWithJar('yahoo-img', url, deadline));
+        ({ status, text } = await fetchTextWithJar('yahoo-img', url, deadline, undefined, undefined, proxy));
     }
     checkStatus('yahoo', status, text);
     const parsed = parseYahooImages(text);
@@ -274,7 +274,7 @@ async function runYahoo(q, _n, safe, deadline) {
     return parsed;
 }
 // ── Engine 4: Wikimedia Commons API ─────────────────────────────────────────
-async function runWikimedia(q, n, _safe, deadline) {
+async function runWikimedia(q, n, _safe, deadline, proxy) {
     const limit = Math.min(50, Math.max(10, n));
     const url = 'https://commons.wikimedia.org/w/api.php?action=query&format=json&formatversion=2' +
         `&generator=search&gsrnamespace=6&gsrlimit=${limit}&gsrsearch=${encodeURIComponent(`${q} filetype:bitmap`)}` +
@@ -282,7 +282,7 @@ async function runWikimedia(q, n, _safe, deadline) {
     const { status, text } = await fetchTextWithJar('wikimedia', url, deadline, {
         'User-Agent': API_UA,
         Accept: 'application/json',
-    });
+    }, undefined, proxy);
     checkStatus('wikimedia', status, text);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let data;
@@ -321,12 +321,12 @@ async function runWikimedia(q, n, _safe, deadline) {
     return { images: out, noResults: !pages.length };
 }
 // ── Engine 5: Openverse API ─────────────────────────────────────────────────
-async function runOpenverse(q, n, _safe, deadline) {
+async function runOpenverse(q, n, _safe, deadline, proxy) {
     const url = `https://api.openverse.org/v1/images/?q=${encodeURIComponent(q)}&page_size=${Math.min(20, Math.max(5, n))}&mature=false`;
     const { status, text } = await fetchTextWithJar('openverse', url, deadline, {
         'User-Agent': API_UA,
         Accept: 'application/json',
-    });
+    }, undefined, proxy);
     checkStatus('openverse', status, text);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let data;
@@ -378,14 +378,15 @@ function configuredEngines() {
     return picked.length ? [...new Set(picked)] : ENGINES;
 }
 // ── Live Parallel URL & Magic-Byte Verifier ─────────────────────────────────
-async function probeImageUrl(url, timeoutMs = 2400) {
+async function probeImageUrl(url, timeoutMs = 2400, proxy) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-        const res = await fetch(url, {
+        const res = await proxyFetch(url, {
             method: 'GET',
             redirect: 'follow',
             signal: controller.signal,
+            proxy,
             headers: {
                 'User-Agent': DEFAULT_UA,
                 Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
@@ -433,7 +434,7 @@ async function probeImageUrl(url, timeoutMs = 2400) {
         clearTimeout(timer);
     }
 }
-async function verifyImageCandidates(candidates, targetCount, deadline) {
+async function verifyImageCandidates(candidates, targetCount, deadline, proxy) {
     if (!candidates.length)
         return [];
     const pool = candidates.slice(0, Math.max(targetCount * 3, 24));
@@ -451,7 +452,7 @@ async function verifyImageCandidates(candidates, targetCount, deadline) {
             if (!item)
                 break;
             const probeTimeout = Math.min(2400, Math.max(600, remainingMs - 100));
-            const primary = await probeImageUrl(item.imageUrl, probeTimeout);
+            const primary = await probeImageUrl(item.imageUrl, probeTimeout, proxy);
             if (primary.ok) {
                 verifiedPrimary.push({
                     idx,
@@ -464,7 +465,7 @@ async function verifyImageCandidates(candidates, targetCount, deadline) {
             }
             // If primary imageUrl is dead/hotlink-blocked, check if thumbUrl is a valid working image
             if (item.thumbUrl && isHttpUrl(item.thumbUrl) && item.thumbUrl !== item.imageUrl) {
-                const thumbProbe = await probeImageUrl(item.thumbUrl, Math.min(1500, probeTimeout));
+                const thumbProbe = await probeImageUrl(item.thumbUrl, Math.min(1500, probeTimeout), proxy);
                 if (thumbProbe.ok) {
                     fallbackThumbs.push({
                         idx,
@@ -522,7 +523,7 @@ export async function imageSearch(options) {
         const t0 = Date.now();
         try {
             const engineDeadline = Math.min(deadline, Date.now() + ENGINE_TIMEOUT_MS);
-            const parsed = await engine.run(query, targetPoolSize, safe, engineDeadline);
+            const parsed = await engine.run(query, targetPoolSize, safe, engineDeadline, options.proxy);
             if (!parsed.images.length && !parsed.noResults) {
                 throw new EngineError('empty_or_layout_changed', 200);
             }
@@ -561,7 +562,7 @@ export async function imageSearch(options) {
         }
     }
     const images = verifyUrls
-        ? await verifyImageCandidates(merged, n, deadline)
+        ? await verifyImageCandidates(merged, n, deadline, options.proxy)
         : merged.slice(0, n);
     const body = {
         total: Math.max(total, merged.length),
@@ -637,7 +638,7 @@ function sanitizeSlug(s) {
         .replace(/^-+|-+$/g, '')
         .slice(0, 48) || 'image');
 }
-async function fetchSingleValidImage(candidate, timeoutMs, minBytes, maxBytes, allowThumbFallback) {
+async function fetchSingleValidImage(candidate, timeoutMs, minBytes, maxBytes, allowThumbFallback, proxy) {
     const urlsToTry = [
         { url: candidate.imageUrl, isThumb: false },
     ];
@@ -656,7 +657,7 @@ async function fetchSingleValidImage(candidate, timeoutMs, minBytes, maxBytes, a
                 'Accept-Language': 'en-US,en;q=0.9',
                 Referer: originReferer,
             };
-            const { status, buffer, contentType } = await fetchBytesWithJar('img-dl', attempt.url, Date.now() + timeoutMs, headers, maxBytes);
+            const { status, buffer, contentType } = await fetchBytesWithJar('img-dl', attempt.url, Date.now() + timeoutMs, headers, maxBytes, proxy);
             if (status >= 400) {
                 lastErr = `HTTP ${status}`;
                 continue;
@@ -709,6 +710,7 @@ export async function downloadImages(options) {
             safe: options.safe,
             engine: options.engine,
             verifyUrls: false,
+            proxy: options.proxy,
         });
         pool = searchRes.images;
     }
@@ -725,7 +727,7 @@ export async function downloadImages(options) {
             if (!candidate)
                 break;
             try {
-                const { buffer, ext, usedThumbnail } = await fetchSingleValidImage(candidate, timeoutPerImageMs, minBytes, maxBytes, allowThumbFallback);
+                const { buffer, ext, usedThumbnail } = await fetchSingleValidImage(candidate, timeoutPerImageMs, minBytes, maxBytes, allowThumbFallback, options.proxy);
                 if (downloaded.length >= requested)
                     break;
                 const slot = downloaded.length + 1;

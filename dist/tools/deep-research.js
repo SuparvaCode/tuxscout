@@ -49,7 +49,7 @@ export function expandQueryAngles(query, subQueries, depth) {
     };
 }
 // ── Stage 2 Helper: Domain-Diverse Source Selection ─────────────────────────
-function selectDiverseSources(sources, limit, maxPerDomain) {
+function selectDiverseSources(sources, limit, maxPerDomain, includePdf = true) {
     const domainCounts = new Map();
     const primary = [];
     const backups = [];
@@ -57,8 +57,11 @@ function selectDiverseSources(sources, limit, maxPerDomain) {
         const dom = hostOf(src.url);
         if (!dom)
             continue;
-        // Skip direct PDF/ZIP binary links for fast HTML/Markdown extraction
-        if (/\.(pdf|zip|tar|gz|exe|dmg|iso|mp4|mp3)(?:$|[?#])/i.test(src.url)) {
+        // Skip binary archive/media links; allow PDFs when includePdf is enabled
+        if (/\.(zip|tar|gz|exe|dmg|iso|mp4|mp3)(?:$|[?#])/i.test(src.url)) {
+            continue;
+        }
+        if (!includePdf && /\.pdf(?:$|[?#])/i.test(src.url)) {
             continue;
         }
         const count = domainCounts.get(dom) || 0;
@@ -148,16 +151,20 @@ export async function deepResearch(options) {
     const webPromise = webSearch({
         queries: angles,
         n: searchLimit,
+        searchType: options.searchType,
+        site: options.site,
+        timeRange: options.timeRange,
+        proxy: options.proxy,
     });
     const imagesPromise = options.includeImages
-        ? imageSearch({ query, n: 8 }).catch(() => null)
+        ? imageSearch({ query, n: 8, proxy: options.proxy }).catch(() => null)
         : Promise.resolve(null);
     const ytPromise = options.includeYoutube
-        ? youtubeTool({ input: query, mode: 'search', searchLimit: 3 }).catch(() => null)
+        ? youtubeTool({ input: query, mode: 'search', searchLimit: 3, proxy: options.proxy }).catch(() => null)
         : Promise.resolve(null);
     const [webRes, imgRes, ytRes] = await Promise.all([webPromise, imagesPromise, ytPromise]);
     const stage2Ms = Date.now() - tStage2;
-    const { primary: primaryTargets, backups: backupTargets } = selectDiverseSources(webRes.sources, maxPages, maxPerDomain);
+    const { primary: primaryTargets, backups: backupTargets } = selectDiverseSources(webRes.sources, maxPages, maxPerDomain, options.includePdf !== false);
     // ── STAGE 3: Parallel Tiered Content Extraction (HTTP -> Puppeteer) ───────
     const tStage3 = Date.now();
     const snippetMap = new Map();
@@ -174,6 +181,7 @@ export async function deepResearch(options) {
             autoPuppeteer,
             onlyMainContent: true,
             timeoutMs: 14_000,
+            proxy: options.proxy,
         });
     }
     // Stage 3b: If some primary pages failed or returned ultra-thin content, top up from backup URLs
@@ -188,6 +196,7 @@ export async function deepResearch(options) {
             autoPuppeteer,
             onlyMainContent: true,
             timeoutMs: 12_000,
+            proxy: options.proxy,
         });
         fetchedPages.push(...extraFetched);
     }
@@ -199,6 +208,7 @@ export async function deepResearch(options) {
                 input: ytRes.searchResults[0].url,
                 mode: 'transcript',
                 timeoutMs: 20_000,
+                proxy: options.proxy,
             });
             if (tr.ok && tr.transcript?.fullText) {
                 ytTranscriptSnippet = tr.transcript.fullText.slice(0, 2500);

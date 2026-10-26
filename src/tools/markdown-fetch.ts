@@ -10,6 +10,7 @@ import {
   hostOf,
   isHttpUrl,
   LruCache,
+  type ProxyInput,
 } from '../utils/http.js';
 import {
   detectJsRequirement,
@@ -32,6 +33,8 @@ export interface MarkdownFetchOptions {
   forcePuppeteer?: boolean;
   noCache?: boolean;
   headers?: Record<string, string>;
+  /** Optional HTTP/HTTPS/SOCKS5 proxy URL or proxy list for rotation */
+  proxy?: ProxyInput;
 }
 
 export interface MarkdownFetchResult {
@@ -88,7 +91,7 @@ export async function fetchMarkdown(
     if (hit) return { ...hit, cached: true };
   }
 
-  // Zero-browser Smart Extract interception for social media & structured platforms
+  // Zero-browser Smart Extract interception for social media, IMDb, PDFs & structured platforms
   if (!options.forcePuppeteer) {
     const provider = detectExtractProvider(targetUrl);
     if (
@@ -97,13 +100,16 @@ export async function fetchMarkdown(
       provider === 'reddit' ||
       provider === 'stackoverflow' ||
       provider === 'arxiv' ||
-      provider === 'tiktok'
+      provider === 'tiktok' ||
+      provider === 'imdb' ||
+      provider === 'pdf'
     ) {
       try {
         const apiRes = await smartExtract({
           target: targetUrl,
-          maxChars: maxChars || 8000,
+          maxChars: maxChars || 12000,
           noCache: options.noCache,
+          proxy: options.proxy,
         });
         if (apiRes.ok && apiRes.markdown) {
           const md = maxChars > 0 ? apiRes.markdown.slice(0, maxChars) : apiRes.markdown;
@@ -153,6 +159,7 @@ export async function fetchMarkdown(
       maxChars,
       onlyMainContent,
       extraHeaders: options.headers,
+      proxy: options.proxy,
     });
     const body: Omit<MarkdownFetchResult, 'cached'> = {
       url: targetUrl,
@@ -191,6 +198,8 @@ export async function fetchMarkdown(
       targetUrl,
       started + timeoutMs,
       options.headers ? { ...BROWSER_HEADERS, ...options.headers } : BROWSER_HEADERS,
+      undefined,
+      options.proxy,
     );
     status = res.status;
     rawText = res.text;
@@ -200,8 +209,54 @@ export async function fetchMarkdown(
     httpError = (err as Error)?.message || String(err);
   }
 
-  // Handle non-HTML content types cleanly (JSON, plain text, markdown, XML)
+  // Handle non-HTML content types cleanly (PDF, JSON, plain text, markdown, XML)
   if (!httpError && status >= 200 && status < 400 && rawText) {
+    if (contentType.includes('application/pdf')) {
+      try {
+        const pdfRes = await smartExtract({
+          target: finalUrl,
+          provider: 'pdf',
+          maxChars: maxChars || 12000,
+          noCache: options.noCache,
+          proxy: options.proxy,
+        });
+        if (pdfRes.ok && pdfRes.markdown) {
+          const md = maxChars > 0 ? pdfRes.markdown.slice(0, maxChars) : pdfRes.markdown;
+          const firstHeading = /^#\s+(.+)$/m.exec(md)?.[1] || finalUrl;
+          const body: Omit<MarkdownFetchResult, 'cached'> = {
+            url: targetUrl,
+            finalUrl,
+            domain: hostOf(finalUrl),
+            status,
+            ok: true,
+            method: 'api',
+            title: firstHeading,
+            metadata: {
+              title: firstHeading,
+              description: 'PDF document extracted via TuxScout PDF parser',
+              author: '',
+              publishedTime: '',
+              siteName: hostOf(finalUrl),
+              canonicalUrl: finalUrl,
+              language: 'en',
+            },
+            markdown: md,
+            textContent: md,
+            wordCount: countWords(md),
+            charCount: md.length,
+            links: [],
+            images: [],
+            needsJs: false,
+            ms: Date.now() - started,
+          };
+          pageCache.set(cacheKey, body);
+          return { ...body, cached: false };
+        }
+      } catch {
+        /* fall through */
+      }
+    }
+
     if (contentType.includes('application/json')) {
       let formattedJson = rawText;
       try {
@@ -290,6 +345,7 @@ export async function fetchMarkdown(
         maxChars,
         onlyMainContent,
         extraHeaders: options.headers,
+        proxy: options.proxy,
       });
       if (pup.markdown.length > 80 || !rawText) {
         const body: Omit<MarkdownFetchResult, 'cached'> = {

@@ -1,4 +1,5 @@
-import { type Intent, type WebSource } from './web-search.js';
+import { type ProxyInput } from '../utils/http.js';
+import { type Intent, type SearchTimeRange, type SearchVertical, type WebSource } from './web-search.js';
 import { type ImageItem } from './image-search.js';
 import { type YtVideoMetadata } from './yt-downloader.js';
 export type ResearchDepth = 'quick' | 'standard' | 'deep';
@@ -17,12 +18,22 @@ export interface DeepResearchOptions {
     maxPerDomain?: number;
     /** Automatically escalate JS-walled pages to low-memory Puppeteer (default true) */
     autoPuppeteer?: boolean;
+    /** Allow fetching and extracting text from PDF URLs discovered during search (default true) */
+    includePdf?: boolean;
+    /** Optional search vertical preset ('general' | 'pdf' | 'imdb' | 'academic' | 'code' | 'docs' | 'books') */
+    searchType?: SearchVertical;
+    /** Optional domain filter (e.g. 'arxiv.org' or ['github.com', 'docs.rs']) */
+    site?: string | string[];
+    /** Optional recency filter ('day' | 'week' | 'month' | 'year' | 'any') */
+    timeRange?: SearchTimeRange;
     /** Also run parallel image search for visual context (default false) */
     includeImages?: boolean;
     /** Also search YouTube and optionally pull top video transcript (default false) */
     includeYoutube?: boolean;
     /** Total timeout budget in ms (default 45_000) */
     timeoutMs?: number;
+    /** Optional HTTP/HTTPS/SOCKS5 proxy URL or proxy list for rotation */
+    proxy?: ProxyInput;
 }
 export interface RankedEvidencePage {
     citationIndex: number;

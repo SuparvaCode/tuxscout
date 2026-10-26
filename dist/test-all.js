@@ -4,7 +4,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
-import { webSearch } from './tools/web-search.js';
+import { getGlobalProxy, parseProxyString, resolveProxyCandidates, setGlobalProxy, } from './utils/http.js';
+import { buildAdvancedQuery, searchImdb, searchPdf, webSearch, } from './tools/web-search.js';
 import { downloadImages, imageSearch } from './tools/image-search.js';
 import { fetchMarkdownBatch } from './tools/markdown-fetch.js';
 import { closePuppeteerPool, fetchWithPuppeteer } from './tools/puppeteer-fetch.js';
@@ -12,7 +13,7 @@ import { youtubeTool } from './tools/yt-downloader.js';
 import { deepResearch } from './tools/deep-research.js';
 import { socialIntel } from './tools/social-intel.js';
 import { newsIntel } from './tools/news-intel.js';
-import { smartExtract } from './tools/smart-extract.js';
+import { parsePdfBuffer, smartExtract } from './tools/smart-extract.js';
 import { startServer } from './server.js';
 const results = [];
 async function runStep(name, fn) {
@@ -260,6 +261,82 @@ async function main() {
                 throw new Error(`News/Extract failed: news=${news.ok}, extract=${pkg.ok}`);
             }
             return `hnStories=${news.total}, extractProvider=${pkg.provider} (${pkg.target})`;
+        });
+        // 17. Proxy IP Parsing, Rotation Pool & Global Config
+        await runStep('17. Universal Proxy IP Parsing & Rotation Pool (HTTP/HTTPS/SOCKS5)', async () => {
+            const p1 = parseProxyString('192.168.1.10:8080:myuser:mypass');
+            const p2 = parseProxyString('socks5h://alice:secret@10.0.0.5:1080');
+            const pool = resolveProxyCandidates([
+                'http://1.1.1.1:8080,socks5://2.2.2.2:1080',
+                '3.3.3.3:3128:u:p',
+            ]);
+            setGlobalProxy('http://127.0.0.1:9999');
+            const globalP = getGlobalProxy();
+            setGlobalProxy(null);
+            if (!p1 ||
+                p1.username !== 'myuser' ||
+                p1.password !== 'mypass' ||
+                !p2 ||
+                p2.protocol !== 'socks5h:' ||
+                pool.length !== 3 ||
+                globalP !== 'http://127.0.0.1:9999') {
+                throw new Error('Proxy parser or rotation pool validation failed');
+            }
+            return `parsed=${p1.serverArg} (auth=${Boolean(p1.username)}), socks=${p2.serverArg}, poolSize=${pool.length}`;
+        });
+        // 18. IMDb Search & Rich Movie/TV Dossier Extraction
+        await runStep('18. IMDb Search & Rich Title Dossier Extraction', async () => {
+            const [imdbSearch, imdbExtract] = await Promise.all([
+                searchImdb('Inception', 5),
+                smartExtract({ target: 'imdb:Inception' }),
+            ]);
+            if (!imdbSearch.sources.length || !imdbExtract.ok) {
+                throw new Error(`IMDb failed: search=${imdbSearch.sources.length}, extract=${imdbExtract.ok}`);
+            }
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const topTitle = imdbExtract.structured?.title || imdbSearch.sources[0].title;
+            return `imdbResults=${imdbSearch.sources.length}, topTitle="${topTitle}" (${imdbExtract.markdown.length} chars MD)`;
+        });
+        // 19. Advanced Search Operators & Multi-Engine PDF Search
+        await runStep('19. Advanced Search Operators & Multi-Engine PDF Search', async () => {
+            const advQuery = buildAdvancedQuery('ebpf packet filter', {
+                searchType: 'pdf',
+                site: ['arxiv.org', 'kernel.org'],
+                excludeTerms: 'windows',
+                exactPhrase: 'XDP',
+            });
+            if (!advQuery.includes('filetype:pdf') || !advQuery.includes('site:arxiv.org')) {
+                throw new Error(`Invalid advanced query: ${advQuery}`);
+            }
+            const pdfRes = await searchPdf('Attention Is All You Need transformer', { n: 5 });
+            if (!pdfRes.sources.length) {
+                throw new Error('PDF search returned 0 PDFs');
+            }
+            return `query="${advQuery}", pdfFound=${pdfRes.sources.length}, topPdf=${pdfRes.sources[0].url}`;
+        });
+        // 20. Zero-Dependency PDF Text & Metadata Parser
+        await runStep('20. Zero-Dependency PDF Text & Metadata Parser', async () => {
+            const samplePdf = Buffer.from(`%PDF-1.4
+1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
+3 0 obj << /Type /Page /Parent 2 0 R /Contents 4 0 R >> endobj
+4 0 obj << /Length 68 >>
+stream
+BT
+/F1 12 Tf
+72 712 Td
+(TuxScout Zero-Dependency PDF Parser Verified!) Tj
+ET
+endstream
+endobj
+5 0 obj << /Title (TuxScout PDF Spec) /Author (TuxScout) >> endobj
+%%EOF`, 'latin1');
+            const parsed = parsePdfBuffer(samplePdf, 5000);
+            if (!parsed.text.includes('TuxScout Zero-Dependency PDF Parser Verified!') ||
+                parsed.title !== 'TuxScout PDF Spec') {
+                throw new Error(`Unexpected PDF parse result: ${JSON.stringify(parsed)}`);
+            }
+            return `title="${parsed.title}", pages=${parsed.pageCount}, text="${parsed.text}"`;
         });
     }
     finally {

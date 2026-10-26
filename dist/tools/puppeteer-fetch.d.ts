@@ -1,3 +1,4 @@
+import { type ProxyInput } from '../utils/http.js';
 import { type PageMetadata } from '../utils/html.js';
 export interface PuppeteerFetchOptions {
     url: string;
@@ -24,6 +25,8 @@ export interface PuppeteerFetchOptions {
         path?: string;
     }>;
     closeBrowserAfter?: boolean;
+    /** Optional HTTP/HTTPS/SOCKS5 proxy URL or proxy list for rotation */
+    proxy?: ProxyInput;
 }
 export interface PuppeteerFetchResult {
     url: string;

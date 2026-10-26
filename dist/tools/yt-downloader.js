@@ -6,7 +6,7 @@ import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { clean, DEFAULT_UA, fetchBytesWithJar, fetchTextWithJar, isHttpUrl } from '../utils/http.js';
+import { clean, DEFAULT_UA, fetchBytesWithJar, fetchTextWithJar, isHttpUrl, resolveProxy, } from '../utils/http.js';
 import { decodeEntities } from '../utils/html.js';
 // ── Binary Discovery & Auto-Bootstrap (Windows + Linux + macOS) ─────────────
 function whichSync(cmd) {
@@ -84,7 +84,7 @@ export function findFfmpegBinary() {
 export function hasFfmpeg() {
     return Boolean(findFfmpegBinary());
 }
-export async function ensureYtDlp() {
+export async function ensureYtDlp(proxy) {
     if (process.env.YT_DLP_PATH && fsSync.existsSync(process.env.YT_DLP_PATH)) {
         return process.env.YT_DLP_PATH;
     }
@@ -106,7 +106,7 @@ export async function ensureYtDlp() {
         assetName = 'yt-dlp_linux_aarch64';
     const targetPath = path.join(binDir, isWin ? 'yt-dlp.exe' : 'yt-dlp');
     const downloadUrl = `https://github.com/yt-dlp/yt-dlp/releases/latest/download/${assetName}`;
-    const { status, buffer } = await fetchBytesWithJar('ytdlp-bootstrap', downloadUrl, Date.now() + 60_000, { 'User-Agent': 'TuxScout/1.0' }, 60 * 1024 * 1024);
+    const { status, buffer } = await fetchBytesWithJar('ytdlp-bootstrap', downloadUrl, Date.now() + 60_000, { 'User-Agent': 'TuxScout/1.0' }, 60 * 1024 * 1024, proxy);
     if (status >= 400 || buffer.length < 100_000) {
         throw new Error(`Failed to auto-download yt-dlp from ${downloadUrl} (HTTP ${status}). Run "tuxscout setup" or install yt-dlp manually.`);
     }
@@ -399,14 +399,14 @@ function selectSingleSubUrlFromYtDlpJson(parsed, preferredLang) {
     return pickFromMap(subsObj) || pickFromMap(autoObj);
 }
 // Fast native Innertube / Watch-page transcript extractor (~1s when YouTube allows direct caption fetch)
-async function tryFastInnertubeTranscript(videoId, preferredLang, deadline) {
+async function tryFastInnertubeTranscript(videoId, preferredLang, deadline, proxy) {
     try {
         const watchUrl = `https://www.youtube.com/watch?v=${videoId}&hl=en`;
         const { status, text } = await fetchTextWithJar('yt-watch', watchUrl, Math.min(deadline, Date.now() + 4_500), {
             'User-Agent': DEFAULT_UA,
             'Accept-Language': 'en-US,en;q=0.9',
             Cookie: 'CONSENT=YES+cb.20210328-17-p0.en+FX+410',
-        });
+        }, undefined, proxy);
         if (status >= 400 || !text)
             return null;
         const marker = 'ytInitialPlayerResponse = ';
@@ -467,7 +467,7 @@ async function tryFastInnertubeTranscript(videoId, preferredLang, deadline) {
             const subRes = await fetchTextWithJar('yt-watch', subUrl, Math.min(deadline, Date.now() + 3_500), {
                 'User-Agent': DEFAULT_UA,
                 Referer: watchUrl,
-            });
+            }, undefined, proxy);
             if (subRes.status === 200 && subRes.text.trim().length > 20) {
                 const segments = parseVttOrSrt(subRes.text);
                 if (segments.length > 0) {
@@ -516,7 +516,7 @@ function parseViewsText(str) {
     const mult = m[2] === 'B' ? 1_000_000_000 : m[2] === 'M' ? 1_000_000 : m[2] === 'K' ? 1_000 : 1;
     return Math.round(num * mult);
 }
-async function tryDirectYoutubeSearch(query, videoType, limit, timeoutMs = 10_000) {
+async function tryDirectYoutubeSearch(query, videoType, limit, timeoutMs = 10_000, proxy) {
     try {
         const cleanQ = query.replace(/^ytsearch\d*:/i, '').trim();
         // sp=EgIYAQ%3D%3D is YouTube's native Shorts / <4m filter tab
@@ -526,7 +526,7 @@ async function tryDirectYoutubeSearch(query, videoType, limit, timeoutMs = 10_00
             'User-Agent': DEFAULT_UA,
             'Accept-Language': 'en-US,en;q=0.9',
             Cookie: 'CONSENT=YES+cb.20210328-17-p0.en+FX+410',
-        });
+        }, undefined, proxy);
         if (status >= 400 || !text)
             return [];
         const m = /var ytInitialData\s*=\s*(\{[\s\S]*?\});<\/script>/.exec(text);
@@ -661,7 +661,7 @@ export async function youtubeTool(options) {
     // If no explicit mode was provided and input is a plain search phrase (not a URL or 11-char ID), default to 'search'
     const mode = options.mode || (isHttpUrl(rawInput) || directVideoId ? 'video' : 'search');
     const videoType = options.videoType || 'long';
-    const ytDlpBin = await ensureYtDlp();
+    const ytDlpBin = await ensureYtDlp(options.proxy);
     const ffmpegBin = findFfmpegBinary();
     const ffmpegOk = Boolean(ffmpegBin);
     const baseArgs = ['--no-warnings', '--no-check-certificates', '--geo-bypass'];
@@ -671,12 +671,16 @@ export async function youtubeTool(options) {
     if (options.cookiesFile && fsSync.existsSync(options.cookiesFile)) {
         baseArgs.push('--cookies', path.resolve(options.cookiesFile));
     }
+    const resolvedProxy = resolveProxy(options.proxy);
+    if (resolvedProxy?.url) {
+        baseArgs.push('--proxy', resolvedProxy.url);
+    }
     // ── Mode 1: YouTube Search (with Shorts vs Long-Form Filtering) ───────────
     if (mode === 'search') {
         const limit = Math.max(1, Math.min(25, Math.floor(Number(options.searchLimit) || 5)));
         const timeoutMs = options.timeoutMs ?? 30_000;
         // Tier 1: Fast direct YouTube ytInitialData search (~800ms) with native Long vs Shorts separation
-        const fastItems = await tryDirectYoutubeSearch(rawInput, videoType, limit, Math.min(10_000, timeoutMs));
+        const fastItems = await tryDirectYoutubeSearch(rawInput, videoType, limit, Math.min(10_000, timeoutMs), options.proxy);
         if (fastItems.length > 0) {
             return {
                 mode,
@@ -796,7 +800,7 @@ export async function youtubeTool(options) {
         const lang = clean(options.subLang || 'en');
         // Tier 1: Try fast direct Innertube/watch-page extraction (~1s) when videoId is known
         if (directVideoId) {
-            const fastHit = await tryFastInnertubeTranscript(directVideoId, lang, deadline);
+            const fastHit = await tryFastInnertubeTranscript(directVideoId, lang, deadline, options.proxy);
             if (fastHit && fastHit.segments.length > 0) {
                 const fullText = fastHit.segments.map((s) => s.text).join(' ');
                 const mdLines = [
@@ -878,7 +882,7 @@ export async function youtubeTool(options) {
             const subRes = await fetchTextWithJar('yt-subs-single', chosenSub.url, Math.max(Date.now() + 10_000, deadline), {
                 'User-Agent': DEFAULT_UA,
                 'Accept-Language': 'en-US,en;q=0.9',
-            });
+            }, undefined, options.proxy);
             subText = subRes.text;
             subStatus = subRes.status;
         }

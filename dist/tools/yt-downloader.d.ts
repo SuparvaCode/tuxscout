@@ -1,3 +1,4 @@
+import { type ProxyInput } from '../utils/http.js';
 export type YtMode = 'video' | 'audio' | 'transcript' | 'info' | 'search';
 export type YtVideoType = 'long' | 'shorts' | 'all';
 export type AudioFormat = 'mp3' | 'm4a' | 'opus' | 'wav' | 'flac' | 'best';
@@ -50,6 +51,8 @@ export interface YtToolOptions {
     filenamePrefix?: string;
     /** Max execution timeout in ms (default 180_000 for downloads, 30_000 for info/search) */
     timeoutMs?: number;
+    /** Optional HTTP/HTTPS/SOCKS5 proxy URL or proxy list for rotation */
+    proxy?: ProxyInput;
 }
 export interface YtToolResult {
     mode: YtMode;
@@ -73,7 +76,7 @@ export interface YtToolResult {
 }
 export declare function findFfmpegBinary(): string | null;
 export declare function hasFfmpeg(): boolean;
-export declare function ensureYtDlp(): Promise<string>;
+export declare function ensureYtDlp(proxy?: ProxyInput): Promise<string>;
 export declare function extractYoutubeVideoId(input: string): string | null;
 export declare const extractVideoId: typeof extractYoutubeVideoId;
 export declare function parseVttOrSrt(content: string): TranscriptSegment[];
